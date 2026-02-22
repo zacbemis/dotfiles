@@ -80,7 +80,6 @@ These are created at runtime by pywal/matugen and intentionally excluded:
 ## Notes
 
 - **Monitor config** is in `hypr/hyprmodules/monitors.conf` — you will likely need to change this for your display
-- **nvm** (Node Version Manager) is not tracked — it lives at `~/.config/nvm/` and is managed by its own installer
 - **.oh-my-zsh** is not tracked — it's a git repo managed by `omz update`
 - **Fonts used**: SF Pro Display, Mononoki Nerd Font, JetBrainsMono Nerd Font
 

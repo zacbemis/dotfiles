@@ -1,0 +1,20 @@
+# Runtime-generated color files (created by pywal / matugen)
+.config/*/colors/
+.config/kitty/colors.conf
+.config/nvim/lua/colors/
+.config/gtk-3.0/colors.css
+.config/gtk-4.0/colors.css
+
+# Dynamic wallpaper symlink
+.config/hypr/current_wallpaper
+
+# GTK theme symlinks managed by nwg-look
+.config/gtk-4.0/gtk.css
+.config/gtk-4.0/gtk-dark.css
+.config/gtk-4.0/assets
+
+# OS / editor junk
+.DS_Store
+*.swp
+*.swo
+*~
