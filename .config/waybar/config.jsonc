@@ -1,0 +1,87 @@
+{
+    "position": "top",
+    "margin-top": 8,
+    "modules-left": ["custom/notification", "hyprland/workspaces"],
+    "modules-center": ["clock"],
+    "modules-right": [
+        "tray",
+	"custom/brightness",
+        "pulseaudio",
+        "battery"
+    ],
+
+    "clock": {
+        "interval": 60,
+        "tooltip": true,
+        "format": "{:%I:%M %p}",
+        "tooltip-format": "{:%m-%d-%Y}"
+    },
+
+    "hyprland/workspaces": {
+        "format": "{icon} {windows}",
+        "format-window-separator": "",
+        "workspace-taskbar": {
+            "enable": true,
+            "update-active-window": true,
+            "format": "{icon}",
+            "icon-size": 15
+        }
+    },
+
+    "tray": {
+        "icon-size": 15,
+        "spacing": 8
+    },
+	"custom/brightness": {
+	  "interval": 60,
+	  "exec": "~/.config/waybar/scripts/brightness.sh",
+	  "format": "{}"
+	},
+
+	"pulseaudio": {
+	  "format": "{volume}% {icon}",
+	  "format-bluetooth": "{volume}% {icon}",
+	  "format-muted": "{volume}% ",
+	  "format-icons": {
+	    "headphone": "",
+	    "default": ["", "", ""]
+	  },
+	  "scroll-step": 2,
+	  "ignored-sinks": ["Easy Effects Sink"],
+	  "on-click": "pactl set-sink-mute @DEFAULT_SINK@ toggle"
+	},
+
+
+    "battery": {
+        "bat": "BAT0",
+        "adapter": "ADP1",
+        "interval": 60,
+        "states": {
+            "warning": 40,
+            "critical": 20
+        },
+        "format": "{capacity}% {icon}",
+            "format-icons": ["", "", "", "", ""]
+    },
+
+    "custom/notification": {
+        "tooltip": true,
+        "format": "{icon}",
+        "format-icons": {
+            "notification": "",
+            "none": "",
+            "dnd-notification": "",
+            "dnd-none": "",
+            "inhibited-notification": "",
+            "inhibited-none": "",
+            "dnd-inhibited-notification": "",
+            "dnd-inhibited-none": ""
+        },
+        "return-type": "json",
+        "exec-if": "which swaync-client",
+        "exec": "swaync-client -swb",
+        "on-click": "swaync-client -t -sw",
+        "on-click-right": "swaync-client -d -sw",
+        "escape": true
+    }
+}

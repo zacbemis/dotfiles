@@ -1,0 +1,40 @@
+[config.wallpaper]
+command = 'swww'
+arguments = ['img', '--transition-type', 'center']
+set = true
+
+[templates.hyprland]
+input_path = '~/.config/matugen/templates/hypr-colors.css'
+output_path = '~/.config/hypr/colors/colors.conf'
+
+[templates.waybar]
+input_path = '~/.config/matugen/templates/colors.css'
+output_path = '~/.config/waybar/colors/colors.css'
+post_hook = 'pkill -SIGUSR2 waybar'
+
+[templates.rofi]
+input_path = '~/.config/matugen/templates/rofi-colors.css'
+output_path = '~/.config/rofi/colors/colors.rasi'
+
+[templates.swaync]
+input_path = '~/.config/matugen/templates/colors.css'
+output_path = '~/.config/swaync/colors/colors.css'
+post_hook = '~/.config/matugen/hooks/reload-swaync.sh'
+
+[templates.kitty]
+input_path = '~/.config/matugen/templates/kitty-colors.css'
+output_path = '~/.config/kitty/colors.conf'
+post_hook = '~/.config/matugen/hooks/kitty-apply-colors.sh'
+
+[templates.neovim]
+input_path = '~/.config/matugen/templates/nvim-colors.lua'
+output_path = '~/.config/nvim/lua/colors/matugen-colors.lua'
+
+[templates.gtk3]
+input_path = '~/.config/matugen/templates/gtk-colors.css'
+output_path = '~/.config/gtk-3.0/colors.css'
+post_hook = 'gsettings set org.gnome.desktop.interface gtk-theme ""; gsettings set org.gnome.desktop.interface gtk-theme adw-gtk3-{{mode}}'
+
+[templates.gtk4]
+input_path = '~/.config/matugen/templates/gtk-colors.css'
+output_path = '~/.config/gtk-4.0/colors.css'

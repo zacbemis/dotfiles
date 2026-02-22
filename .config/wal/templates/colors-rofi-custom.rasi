@@ -1,0 +1,41 @@
+* {{
+    primary: {color4};
+    primary-fixed: {color15};
+    primary-fixed-dim: {color4};
+    on-primary: {background};
+    on-primary-fixed: {background};
+    on-primary-fixed-variant: {color8};
+    primary-container: {color8};
+    on-primary-container: {color12};
+
+    secondary: {color6};
+    secondary-fixed: {color14};
+    secondary-fixed-dim: {color6};
+    on-secondary: {background};
+    on-secondary-fixed: {background};
+    on-secondary-fixed-variant: {color8};
+    secondary-container: {color8};
+    on-secondary-container: {color14};
+
+    tertiary: {color5};
+    tertiary-fixed: {color13};
+    tertiary-fixed-dim: {color5};
+    on-tertiary: {background};
+    on-tertiary-fixed: {background};
+    on-tertiary-fixed-variant: {color8};
+    tertiary-container: {color8};
+    on-tertiary-container: {color13};
+
+    error: {color1};
+    on-error: {background};
+
+    background: {background};
+    on-background: {foreground};
+
+    surface: {background};
+    surface-container: {color8};
+    on-surface: {foreground};
+
+    outline: {color8};
+    inverse-primary: {color12};
+}}

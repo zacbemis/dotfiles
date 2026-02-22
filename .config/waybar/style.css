@@ -1,0 +1,127 @@
+@import 'colors/colors.css';
+
+* {
+  border: none;
+  border-radius: 0px;
+  font-family: "SF Pro Display", "JetBrainsMono Nerd Font Propo";
+  font-weight: bold;
+  font-size: 15;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+}
+
+window#waybar {
+  background: transparent;
+}
+
+tooltip {
+  background: @background;
+  border: 1px solid @outline_variant;
+  border-radius: 8px;
+}
+
+tooltip label {
+  color: @on_surface;
+  padding: 6px;
+}
+
+#workspaces {
+  background-color: @background;
+  padding: 5px 3px;
+  margin: 0 0 0 8px;
+  border-radius: 18px;
+  border: 1px solid @outline_variant;
+  color: @on_surface;
+}
+
+#workspaces button {
+  padding: 0px 6px;
+  margin: 0px 3px;
+  min-height: 18px;
+  border-radius: 50px;
+
+  color: @on_surface;
+  background-color: @background;
+
+  transition: all 0.3s ease-in-out;
+}
+
+#workspaces button.active {
+  background-color: @secondary;
+  color: @on_secondary; /* better contrast than @surface */
+  min-width: 40px;
+  transition: all 0.3s ease-in-out;
+}
+
+#workspaces button:hover {
+  background: @primary_container;
+  color: @on_surface;
+  border-color: @outline_variant;
+  border-radius: 16px;
+  min-width: 40px;
+  background-size: 400% 400%;
+}
+
+#workspaces button.urgent {
+  background-color: @error;
+  color: @on_error;
+  border-radius: 16px;
+  min-width: 40px;
+  background-size: 400% 400%;
+  transition: all 0.3s ease-in-out;
+}
+
+#tray,
+#custom-brightness,
+#battery,
+#pulseaudio,
+#clock,
+#custom-notification {
+  background-color: @background;
+  padding: 0 15px 0 15px;
+  margin: 0 0 0 8px;
+  border-radius: 50px;
+  border: 1px solid @outline_variant;
+}
+
+#clock {
+  color: @inverse_primary;
+}
+
+#custom-notification {
+  color: #ffffff;
+}
+
+#custom-notification.notification,
+#custom-notification.dnd-notification {
+  color: @tertiary;
+}
+
+#custom-notification.inhibited-none,
+#custom-notification.inhibited-notification,
+#custom-notification.dnd-inhibited-none,
+#custom-notification.dnd-inhibited-notification {
+  color: @error;
+}
+
+#custom-brightness {
+  color: @secondary;
+}
+
+#pulseaudio {
+  color: @tertiary;
+}
+
+#battery {
+  color: @primary;
+  margin: 0 8px 0 8px;
+}
+
+#battery.warning {
+  color: @primary_fixed;
+}
+
+#battery.critical {
+  color: @error;
+}

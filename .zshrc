@@ -80,7 +80,7 @@ ZSH_THEME="powerlevel10k/powerlevel10k"
 plugins=(git)
 
 source $ZSH/oh-my-zsh.sh
-
+source /usr/share/nvm/init-nvm.sh
 # User configuration
 [[ $- != *i* ]] && return
 bindkey -v
@@ -123,3 +123,4 @@ export VISUAL='nvim'
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+eval "$(direnv hook zsh)"
