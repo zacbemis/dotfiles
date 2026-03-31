@@ -51,7 +51,7 @@ OFFICIAL=(
     neovim
 
     # wallpaper & colors
-    swww
+    awww
     imagemagick
 
     # wayland clipboard & screenshot

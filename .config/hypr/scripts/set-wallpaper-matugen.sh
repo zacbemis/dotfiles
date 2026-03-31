@@ -7,7 +7,7 @@ img="${1:-}"
 # 1) Hyprlock background: keep a stable path that always points to current wallpaper
 ln -sf "$img" "$HOME/.config/hypr/current_wallpaper"
 
-# 2) Run matugen (handles swww + regenerates themes)
+# 2) Run matugen (handles awww + regenerates themes)
 # Background it so rofi never waits.
 (matugen image "$img" >/dev/null 2>&1) &
 disown || true

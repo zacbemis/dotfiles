@@ -30,7 +30,7 @@ Two color systems are set up — use whichever you prefer:
 - **pywal** (`wal -i <image>`) generates colors and `wal-post.sh` symlinks them into each app's `colors/` directory
 - **matugen** (`matugen image <image>`) generates Material You colors and writes them directly to each app's color file
 
-The wallpaper scripts at `~/.config/hypr/scripts/` handle everything: set wallpaper via swww, generate colors, reload apps.
+The wallpaper scripts at `~/.config/hypr/scripts/` handle everything: set wallpaper via awww, generate colors, reload apps.
 
 ## Install
 
