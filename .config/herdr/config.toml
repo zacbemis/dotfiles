@@ -1,0 +1,10 @@
+# Herdr keybindings
+[keys]
+previous_tab = "alt+h"
+next_tab = "alt+l"
+new_tab = "alt+k"
+new_workspace = "alt+shift+k"
+previous_workspace = "alt+shift+h"
+next_workspace = "alt+shift+l"
+close_tab = "alt+q"
+close_workspace = "alt+shift+q"

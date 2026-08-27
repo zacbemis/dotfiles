@@ -13,6 +13,7 @@ Dynamic colorschemes via [pywal](https://github.com/eendroroy/pywal16) and [matu
 | **rofi** | App launcher + wallpaper picker with thumbnail previews |
 | **swaync** | Notification center with Material Design theming, update checker widget |
 | **kitty** | Terminal emulator config |
+| **herdr** | Terminal workspace manager and keybindings |
 | **nvim** | LazyVim-based Neovim setup with dynamic base16 colorscheme |
 | **wal** | Pywal templates for all apps + post-hook script that symlinks generated colors everywhere |
 | **matugen** | Material You color generation templates and reload hooks |
@@ -22,6 +23,7 @@ Dynamic colorschemes via [pywal](https://github.com/eendroroy/pywal16) and [matu
 | **.zshrc** | Zsh config with Oh My Zsh, Powerlevel10k, vi mode, aliases |
 | **.p10k.zsh** | Powerlevel10k prompt configuration |
 | **.gitconfig** | Git user settings |
+| **pi** | Pi coding agent settings, OpenAI web search, and marketplace Vim editor |
 
 ## How colors work
 
@@ -81,6 +83,7 @@ These are created at runtime by pywal/matugen and intentionally excluded:
 
 - **Monitor config** is in `hypr/hyprmodules/monitors.conf` — you will likely need to change this for your display
 - **.oh-my-zsh** is not tracked — it's a git repo managed by `omz update`
+- **Pi auth, model cache, and sessions** are not tracked — marketplace packages are installed by Pi, while their package declarations and web-search provider config are tracked
 - **Fonts used**: SF Pro Display, Mononoki Nerd Font, JetBrainsMono Nerd Font
 
 ## License
