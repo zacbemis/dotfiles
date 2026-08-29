@@ -1,10 +1,16 @@
+onboarding = false
 # Herdr keybindings
 [keys]
 previous_tab = "alt+h"
 next_tab = "alt+l"
-new_tab = "alt+k"
-new_workspace = "alt+shift+k"
-previous_workspace = "alt+shift+h"
-next_workspace = "alt+shift+l"
+new_tab = "alt+n"
+new_workspace = "alt+shift+n"
+previous_workspace = "alt+k"
+next_workspace = "alt+j"
 close_tab = "alt+q"
 close_workspace = "alt+shift+q"
+
+[ui]
+confirm_close = false
+prompt_new_tab_name = false
+prompt_new_workspace_name = false

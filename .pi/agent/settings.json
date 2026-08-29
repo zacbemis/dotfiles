@@ -1,12 +1,13 @@
 {
-  "lastChangelogVersion": "0.84.3",
+  "lastChangelogVersion": "0.84.4",
   "theme": "dark",
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.6-luna",
-  "defaultThinkingLevel": "max",
+  "defaultModel": "gpt-5.6-sol",
+  "defaultThinkingLevel": "high",
   "showCacheMissNotices": true,
   "packages": [
     "npm:pi-web-access",
-    "npm:pi-vim"
+    "npm:pi-vim",
+    "git:github.com/ryan-brosas/pi-multi-pass@1cecf9ad4f43d35b871ee0683768890b1dd6d2de"
   ]
 }
