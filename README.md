@@ -23,7 +23,7 @@ Dynamic colorschemes via [pywal](https://github.com/eendroroy/pywal16) and [matu
 | **.zshrc** | Zsh config with Oh My Zsh, Powerlevel10k, vi mode, aliases |
 | **.p10k.zsh** | Powerlevel10k prompt configuration |
 | **.gitconfig** | Git user settings |
-| **pi** | Pi coding agent settings, OpenAI web search, and marketplace Vim editor |
+| **pi** | Pi coding agent settings, multi-subscription routing, OpenAI web search, and marketplace extensions |
 
 ## How colors work
 
@@ -83,7 +83,7 @@ These are created at runtime by pywal/matugen and intentionally excluded:
 
 - **Monitor config** is in `hypr/hyprmodules/monitors.conf` — you will likely need to change this for your display
 - **.oh-my-zsh** is not tracked — it's a git repo managed by `omz update`
-- **Pi auth, model cache, and sessions** are not tracked — marketplace packages are installed by Pi, while their package declarations and web-search provider config are tracked
+- **Pi auth, model cache, and sessions** are not tracked — settings, package declarations, multi-subscription routing, and web-search provider config are tracked
 - **Fonts used**: SF Pro Display, Mononoki Nerd Font, JetBrainsMono Nerd Font
 
 ## License
