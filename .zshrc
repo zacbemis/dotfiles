@@ -77,7 +77,11 @@ ZSH_THEME="powerlevel10k/powerlevel10k"
 # Custom plugins may be added to $ZSH_CUSTOM/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(git)
+plugins=(
+  git
+  zsh-autosuggestions
+  zsh-syntax-highlighting
+)
 
 source $ZSH/oh-my-zsh.sh
 export NVM_DIR="$HOME/.config/nvm"
@@ -95,18 +99,57 @@ alias ff='nvim $(fzf -m --preview="bat --color=always {}")'
 export EDITOR='nvim'
 export VISUAL='nvim'
 
-# Tab: accept autosuggestion first, otherwise normal completion
-function tab-or-autosuggest() {
-  if [[ -n "$POSTDISPLAY" ]]; then
-    zle autosuggest-accept
-  else
-    zle expand-or-complete
+# Smart Tab:
+#   1st press -> accept the visible autosuggestion
+#   2nd press -> restore the typed prefix and start menu completion
+#   3rd+      -> cycle through completion matches
+#
+# LASTWIDGET makes the restore happen only on consecutive Tab presses. This
+# avoids mistaking an accepted suggestion for pending state after another key.
+typeset -g  _smart_tab_original_buffer=''
+typeset -gi _smart_tab_original_cursor=0
+typeset -g  _smart_tab_accepted_buffer=''
+typeset -gi _smart_tab_accepted_cursor=0
+typeset -gi _smart_tab_restore_pending=0
+
+smart-tab() {
+  if (( _smart_tab_restore_pending )) \
+    && [[ $LASTWIDGET == smart-tab \
+       && $BUFFER == $_smart_tab_accepted_buffer ]] \
+    && (( CURSOR == _smart_tab_accepted_cursor )); then
+    BUFFER=$_smart_tab_original_buffer
+    CURSOR=$_smart_tab_original_cursor
+    POSTDISPLAY=''
+    _smart_tab_restore_pending=0
+    zle menu-complete
+    return
   fi
+
+  # Any intervening widget or edit cancels the saved autosuggestion state.
+  _smart_tab_restore_pending=0
+
+  if [[ -n $POSTDISPLAY ]] && (( CURSOR == ${#BUFFER} )); then
+    _smart_tab_original_buffer=$BUFFER
+    _smart_tab_original_cursor=$CURSOR
+
+    zle autosuggest-accept
+
+    _smart_tab_accepted_buffer=$BUFFER
+    _smart_tab_accepted_cursor=$CURSOR
+    _smart_tab_restore_pending=1
+    return
+  fi
+
+  POSTDISPLAY=''
+  zle menu-complete
 }
 
-zle -N tab-or-autosuggest
-bindkey '^I' tab-or-autosuggest
+zle -N smart-tab
 
+# The widget handles POSTDISPLAY itself, so autosuggestions must not wrap it.
+ZSH_AUTOSUGGEST_IGNORE_WIDGETS+=(smart-tab)
+
+bindkey '^I' smart-tab
 # export MANPATH="/usr/local/man:$MANPATH"
 
 # You may need to manually set your language environment
