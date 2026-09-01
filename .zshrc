@@ -95,6 +95,18 @@ alias ff='nvim $(fzf -m --preview="bat --color=always {}")'
 export EDITOR='nvim'
 export VISUAL='nvim'
 
+# Tab: accept autosuggestion first, otherwise normal completion
+function tab-or-autosuggest() {
+  if [[ -n "$POSTDISPLAY" ]]; then
+    zle autosuggest-accept
+  else
+    zle expand-or-complete
+  fi
+}
+
+zle -N tab-or-autosuggest
+bindkey '^I' tab-or-autosuggest
+
 # export MANPATH="/usr/local/man:$MANPATH"
 
 # You may need to manually set your language environment
