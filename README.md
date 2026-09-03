@@ -81,7 +81,7 @@ These are created at runtime by pywal/matugen and intentionally excluded:
 
 ## Notes
 
-- **Monitor config** is in `hypr/hyprmodules/monitors.conf` — you will likely need to change this for your display
+- **Monitor config** is in `hypr/hyprmodules/monitors.lua` — you will likely need to change this for your display. Legacy `hyprland.conf` / `monitors.conf` remain as rollback.
 - **.oh-my-zsh** is not tracked — it's a git repo managed by `omz update`
 - **Pi auth, model cache, and sessions** are not tracked — settings, package declarations, multi-subscription routing, and web-search provider config are tracked
 - **Fonts used**: SF Pro Display, Mononoki Nerd Font, JetBrainsMono Nerd Font
