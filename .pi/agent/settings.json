@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.84.4",
+  "lastChangelogVersion": "0.85.1",
   "theme": "dark",
   "defaultProvider": "openai-codex-2",
   "defaultModel": "gpt-5.6-sol",
@@ -8,6 +8,8 @@
   "packages": [
     "npm:pi-web-access",
     "npm:pi-vim",
-    "git:github.com/ryan-brosas/pi-multi-pass@1cecf9ad4f43d35b871ee0683768890b1dd6d2de"
+    "git:github.com/ryan-brosas/pi-multi-pass@1cecf9ad4f43d35b871ee0683768890b1dd6d2de",
+    "npm:pi-antigravity-acp-provider",
+    "npm:@rahularya01/pi-cursor"
   ]
 }

@@ -1,32 +1,51 @@
-# Quickshell development shell
+# Quickshell migration development shell
 
-This is a development-only Quickshell configuration. It is kept separate from
-the default Quickshell configuration and is not started by Hyprland yet.
+This config is a side-by-side replacement for the current Waybar, SwayNC, and
+Rofi setup. Hyprland autostart and keybindings remain unchanged, so the old
+stack is still the fallback.
 
-The initial shell renders a small bottom panel on every detected monitor. It
-intentionally does not start a notification server, launcher, or any other
-component that would conflict with the existing Waybar, SwayNC, or Rofi setup.
+## Components
 
-## Run directly from the repository
+- `Bar.qml` — top bar with workspaces, clock, tray, brightness, volume, and battery
+- `Launcher.qml` — Rofi-like application launcher
+- `WallpaperPicker.qml` — wallpaper list with previews, using the existing wallpaper setter
+- `Notifications.qml` — SwayNC-like popups and control center
+- `SystemState.qml` — PipeWire, UPower, brightness, and update polling
+- `Theme.qml` — read-only adapter for the generated Waybar palette with fallbacks
 
-From the dotfiles repository:
+## Run
+
+From the repository:
 
 ```bash
 qs -p .config/quickshell/quickshell-dev/shell.qml
 ```
 
-Use `quickshell` instead of `qs` if that is the executable provided by your
-package. Quickshell live-reloads QML files while it is running; press `Ctrl+C`
-to stop it.
-
-## Run as a named configuration
-
-After this directory is available below `~/.config/quickshell/`, run:
+Quickshell live-reloads QML files. Use `Ctrl+C` to stop it. The launcher and
+wallpaper picker can be opened from another terminal while the shell is
+running:
 
 ```bash
-qs -c quickshell-dev
+qs ipc --pid <quickshell-pid> call launcher toggle
+qs ipc --pid <quickshell-pid> call wallpaper toggle
 ```
 
-The existing Waybar, SwayNC, and Rofi configuration is intentionally
-unchanged. Do not add this shell to Hyprland autostart until it is ready to
-replace the corresponding components.
+Notifications are disabled by default so SwayNC can continue running. To test
+Quickshell notifications, temporarily mask the SwayNC user service first:
+
+```bash
+systemctl --user mask --runtime --now swaync.service
+QUICKSHELL_ENABLE_NOTIFICATIONS=1 qs -p .config/quickshell/quickshell-dev/shell.qml
+notify-send "Quickshell test" "Notification body"
+```
+
+Only one process can own `org.freedesktop.Notifications`. Restore SwayNC after
+testing with:
+
+```bash
+systemctl --user unmask --runtime swaync.service
+systemctl --user start swaync.service
+```
+
+Do not add this shell to Hyprland autostart or change the existing keybindings
+until the replacement is ready.

@@ -86,6 +86,12 @@ plugins=(
 source $ZSH/oh-my-zsh.sh
 export NVM_DIR="$HOME/.config/nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+# Keep pi-cursor aligned with the installed Cursor CLI and its regional endpoint.
+# Override either variable per command when testing a different deployment.
+export PI_CURSOR_CLIENT_VERSION="${PI_CURSOR_CLIENT_VERSION:-cli-2026.08.25-3e8eec8}"
+export CURSOR_CONFIG_DIR="${CURSOR_CONFIG_DIR:-$HOME/.config/cursor}"
+
 # User configuration
 [[ $- != *i* ]] && return
 bindkey -v
@@ -181,3 +187,7 @@ bindkey '^I' smart-tab
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 eval "$(direnv hook zsh)"
 export PATH="$HOME/.cargo/bin:$PATH"
+
+
+# Added by Antigravity CLI installer
+export PATH="/home/zacb/.local/bin:$PATH"
