@@ -1,5 +1,7 @@
 # Runtime-generated color files (created by pywal / matugen)
 .config/*/colors/
+# Neovim's colors/ contains source themes; generated palettes live in lua/colors/.
+!.config/nvim/colors/
 .config/kitty/colors.conf
 .config/nvim/lua/colors/
 .config/gtk-3.0/colors.css

@@ -102,6 +102,8 @@ alias grep='grep --color=auto'
 alias ..='cd ..'
 alias ...='cd ../..'
 alias ff='nvim $(fzf -m --preview="bat --color=always {}")'
+# The personal config is now the main Neovim setup; keep the old shortcut.
+alias nvown='nvim'
 export EDITOR='nvim'
 export VISUAL='nvim'
 

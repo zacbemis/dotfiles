@@ -14,7 +14,7 @@ Dynamic colorschemes via [pywal](https://github.com/eendroroy/pywal16) and [matu
 | **swaync** | Notification center with Material Design theming, update checker widget |
 | **kitty** | Terminal emulator config |
 | **herdr** | Terminal workspace manager and keybindings |
-| **nvim** | LazyVim-based Neovim setup with dynamic base16 colorscheme |
+| **nvim** | Standalone Neovim setup with LSP, Treesitter, Git tools, and live wallpaper-derived colors |
 | **wal** | Pywal templates for all apps + post-hook script that symlinks generated colors everywhere |
 | **matugen** | Material You color generation templates and reload hooks |
 | **gtk-3.0 / gtk-4.0** | GTK theme settings (adw-gtk3-dark, Papirus icons, Bibata cursor) |
@@ -33,6 +33,11 @@ Two color systems are set up — use whichever you prefer:
 - **matugen** (`matugen image <image>`) generates Material You colors and writes them directly to each app's color file
 
 The wallpaper scripts at `~/.config/hypr/scripts/` handle everything: set wallpaper via awww, generate colors, reload apps.
+
+Neovim uses the newest valid Pywal or Matugen palette for live background colors,
+while a local, VS Code–inspired scheme keeps syntax colors consistent (no theme plugin).
+Plain `nvim` opens the standalone config; see [its README](.config/nvim/README.md)
+for plugins and keybindings.
 
 ## Install
 
