@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
-import Quickshell.Widgets
 import Quickshell.Services.Notifications
 
 Rectangle {
@@ -9,177 +8,194 @@ Rectangle {
 
     required property var record
     property bool centerCard: false
-
-    implicitHeight: cardContent.implicitHeight + 24
+    property bool showAppName: true
+    property bool expandedBody: false
+    readonly property bool bodyTruncated: bodyText.truncated
+    function toggleBody(): void { expandedBody = !expandedBody; }
+    // Records can disappear a frame before their ListView delegate is removed.
+    readonly property var details: record && !record.removed ? ({
+        urgency: record.urgency, appIcon: record.appIcon, appName: record.appName,
+        summary: record.summary, body: record.body, image: record.image, receivedAt: record.receivedAt,
+        actions: record.actions.map(action => ({text: action.text, handle: action}))
+    }) : ({urgency: NotificationUrgency.Normal,
+        appIcon: "", appName: "", summary: "", body: "", image: "", receivedAt: Date.now(), actions: []})
+    implicitHeight: content.implicitHeight + 24
     radius: 10
-    color: root.centerCard ? Theme.inversePrimary : Theme.backgroundAlpha
-    border.color: root.record.urgency === NotificationUrgency.Critical
-                  ? Theme.error : Theme.secondary
-    border.width: root.record.urgency === NotificationUrgency.Critical ? 2 : 1
+    color: centerCard ? Theme.notificationSurface : Theme.backgroundAlpha
+    border.color: details.urgency === NotificationUrgency.Critical ? Theme.error : Theme.outlineVariant
+    border.width: details.urgency === NotificationUrgency.Critical ? 2 : 1
     clip: true
 
-    function iconSource(icon) {
+    function iconSource(icon): string {
         if (!icon) return "";
         if (icon.startsWith("file://") || icon.startsWith("image://")) return icon;
-        if (icon.startsWith("/")) return "file://" + icon;
-        return Quickshell.iconPath(icon, true);
+        return icon.startsWith("/") ? Theme.fileUrl(icon) : Quickshell.iconPath(icon, true);
     }
 
     HoverHandler {
-        onHoveredChanged: root.record.hovered = hovered
+        enabled: !root.centerCard
+        onHoveredChanged: if (root.record) root.record.hovered = hovered
     }
-
-    Timer {
-        id: popupTimer
-        interval: root.record.timeoutMs
-        running: !root.centerCard && root.record.popupVisible && !root.record.hovered
-        onTriggered: root.record.popupVisible = false
-    }
-
+    Component.onDestruction: if (record && !record.removed) record.hovered = false
     MouseArea {
         anchors.fill: parent
-        z: -1
-        acceptedButtons: Qt.LeftButton
-        onClicked: root.record.invokeDefaultAction()
+        onClicked: if (root.record) root.record.invokeDefaultAction()
     }
 
     ColumnLayout {
-        id: cardContent
-        anchors.fill: parent
-        anchors.margins: 12
-        spacing: 6
+        id: content
+        anchors { top: parent.top; left: parent.left; right: parent.right; margins: 12 }
+        spacing: 8
 
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
-
-            Item {
-                Layout.preferredWidth: 20
-                Layout.preferredHeight: 20
-
-                Image {
-                    anchors.fill: parent
-                    source: root.iconSource(root.record.appIcon)
-                    sourceSize.width: 20
-                    sourceSize.height: 20
-                    fillMode: Image.PreserveAspectFit
-                    visible: source !== ""
-                }
-
-                Text {
-                    anchors.centerIn: parent
-                    text: root.record.urgency === NotificationUrgency.Critical ? "󰀦" : "󰂚"
-                    color: root.record.urgency === NotificationUrgency.Critical ? Theme.error : Theme.tertiary
-                    font.family: Theme.iconFontFamily
-                    font.pixelSize: 16
-                    visible: root.record.appIcon === ""
-                }
-            }
-
-            Text {
+            ThemeText {
                 Layout.fillWidth: true
-                text: root.record.appName || "Notification"
-                color: Theme.primary
-                font.family: Theme.iconFontFamily
+                text: root.details.appName || "Notification"
+                visible: root.showAppName
+                color: Theme.surfaceVariantText
+                font.family: Theme.fontFamily
                 font.pixelSize: 11
                 elide: Text.ElideRight
             }
-
+            Item { Layout.fillWidth: true; visible: !root.showAppName }
+            ThemeText {
+                text: NotificationService.age(root.details.receivedAt)
+                color: Theme.surfaceVariantText
+                font.pixelSize: 10
+            }
             Rectangle {
                 Layout.preferredWidth: 22
                 Layout.preferredHeight: 22
                 radius: 6
-                color: closeMouse.containsMouse ? Theme.secondary : Theme.transparentColor
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "󰅖"
-                    color: closeMouse.containsMouse ? Theme.primaryText : Theme.primary
-                    font.family: Theme.iconFontFamily
-                    font.pixelSize: 12
+                color: closeMouse.containsMouse ? Theme.controlPressedBackground : Theme.transparentColor
+                Behavior on color {
+                    ColorAnimation { duration: Theme.controlDuration; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.cssEase }
                 }
-
+                GlyphIcon {
+                    anchors.centerIn: parent
+                    glyph: ""
+                    color: Theme.foregroundFor(Qt.tint(Qt.tint(Theme.background, root.color), parent.color), Theme.controlText)
+                    font.pixelSize: Theme.controlIconSize
+                }
                 MouseArea {
                     id: closeMouse
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: root.record.dismiss()
+                    onClicked: if (root.record) root.record.dismiss()
                 }
             }
         }
-
-        Text {
-            Layout.fillWidth: true
-            text: root.record.summary
-            color: Theme.primary
-            font.family: Theme.iconFontFamily
-            font.pixelSize: 14
-            font.bold: true
-            wrapMode: Text.Wrap
-            visible: text !== ""
-        }
-
         RowLayout {
             Layout.fillWidth: true
-            spacing: 8
-            visible: root.record.body !== "" || root.record.image !== ""
-
-            Text {
+            spacing: 12
+            Item {
+                Layout.preferredWidth: Theme.notificationIconSize
+                Layout.preferredHeight: Theme.notificationIconSize
+                Layout.alignment: Qt.AlignTop
+                visible: !root.centerCard
+                Image {
+                    id: appIcon
+                    anchors.fill: parent
+                    source: root.iconSource(root.details.appIcon)
+                    sourceSize { width: Theme.notificationIconSize; height: Theme.notificationIconSize }
+                    fillMode: Image.PreserveAspectFit
+                }
+                GlyphIcon {
+                    anchors.centerIn: parent
+                    glyph: "󰂚"
+                    font.pixelSize: Theme.notificationIconSize
+                    color: Theme.primary
+                    visible: appIcon.status !== Image.Ready
+                }
+            }
+            ColumnLayout {
                 Layout.fillWidth: true
-                text: root.record.body
-                color: Theme.primary
-                font.family: Theme.iconFontFamily
-                font.pixelSize: 12
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-                maximumLineCount: root.centerCard ? 5 : 3
-                elide: Text.ElideRight
-                visible: text !== ""
-            }
-
-            Image {
-                Layout.preferredWidth: root.centerCard ? 100 : 80
-                Layout.preferredHeight: root.centerCard ? 80 : 64
-                source: root.record.image
-                fillMode: Image.PreserveAspectFit
-                asynchronous: true
-                visible: source !== ""
+                spacing: 8
+                ThemeText {
+                    Layout.fillWidth: true
+                    text: root.details.summary
+                    textFormat: Text.PlainText
+                    color: root.centerCard ? Theme.notificationText : Theme.surfaceText
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 14
+                    font.bold: true
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 3
+                    elide: Text.ElideRight
+                    visible: text !== ""
+                }
+                ThemeText {
+                    id: bodyText
+                    Layout.fillWidth: true
+                    text: root.details.body
+                    color: root.centerCard ? Theme.notificationText : Theme.surfaceText
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 12
+                    font.bold: root.centerCard
+                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                    maximumLineCount: root.expandedBody ? 2147483647 : root.centerCard ? 8 : 4
+                    elide: Text.ElideRight
+                    visible: text !== ""
+                }
             }
         }
-
-        RowLayout {
+        ThemeButton {
             Layout.fillWidth: true
+            visible: root.centerCard && (bodyText.truncated || root.expandedBody)
+            text: root.expandedBody ? "Show less" : "Read full message"
+            surfaceColor: Theme.notificationSurface
+            onClicked: root.toggleBody()
+        }
+        Image {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 140
+            source: root.details.image
+            sourceSize { width: 400; height: 280 }
+            fillMode: Image.PreserveAspectFit
+            asynchronous: true
+            visible: root.details.image !== ""
+        }
+        Flow {
+            id: actions
+            Layout.fillWidth: true
+            Layout.preferredHeight: childrenRect.height
             spacing: 6
-            visible: root.record.actions.length > 0
-
+            visible: root.details.actions.length > 0
             Repeater {
-                model: root.record.actions
-
+                model: root.details.actions
                 Rectangle {
-                    id: actionButton
+                    id: action
                     required property var modelData
-                    Layout.preferredHeight: 28
-                    Layout.preferredWidth: actionLabel.implicitWidth + 20
-                    radius: 8
-                    color: actionMouse.containsMouse ? Theme.tertiary
-                                                     : Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.6)
-
-                    Text {
-                        id: actionLabel
-                        anchors.centerIn: parent
-                        text: actionButton.modelData.text || ""
-                        color: actionMouse.containsMouse ? Theme.tertiaryText : Theme.primary
-                        font.family: Theme.iconFontFamily
-                        font.pixelSize: 11
+                    height: 28
+                    width: Math.min(label.implicitWidth + 20, actions.width)
+                    radius: 6
+                    color: actionMouse.pressed ? Theme.controlPressedBackground
+                        : actionMouse.containsMouse ? (root.centerCard ? Theme.controlPressedBackground : Theme.controlHoverBackground)
+                        : root.centerCard ? Theme.alpha(Theme.secondary, 0.6) : Theme.controlBackground
+                    Behavior on color {
+                        ColorAnimation { duration: Theme.controlDuration; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.cssEase }
                     }
-
+                    ThemeText {
+                        id: label
+                        anchors.centerIn: parent
+                        width: parent.width - 20
+                        text: action.modelData.text || ""
+                        color: Theme.foregroundFor(Qt.tint(Qt.tint(Theme.background, root.color), action.color), Theme.controlText)
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 11
+                        horizontalAlignment: Text.AlignHCenter
+                        elide: Text.ElideRight
+                    }
                     MouseArea {
                         id: actionMouse
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.record.invokeAction(actionButton.modelData)
+                        onClicked: if (root.record) root.record.invokeAction(action.modelData.handle)
                     }
                 }
             }

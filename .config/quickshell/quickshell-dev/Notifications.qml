@@ -1,10 +1,10 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Services.Mpris
-import Quickshell.Services.Notifications
 import Quickshell.Wayland
 
 Scope {
@@ -12,363 +12,361 @@ Scope {
 
     readonly property int count: NotificationService.notifications.length
     readonly property bool dnd: NotificationService.dnd
-    property bool centerOpen: false
-
-    function isFocused(screen) {
-        const monitor = Hyprland.monitorFor(screen);
-        return !Hyprland.focusedMonitor ||
-            (monitor && monitor.name === Hyprland.focusedMonitor.name);
+    readonly property int unreadCount: NotificationService.unreadCount
+    property var collapsedGroups: []
+    property var expandedGroups: []
+    function toggleGroup(key): bool {
+        key = key.toLowerCase();
+        if (!NotificationService.groups.some(group => group.key === key)) return false;
+        collapsedGroups = collapsedGroups.includes(key) ? collapsedGroups.filter(item => item !== key)
+            : [...collapsedGroups, key];
+        return true;
     }
-
-    function toggleCenter(): void {
-        root.centerOpen = !root.centerOpen;
+    function expandGroup(key): bool {
+        key = key.toLowerCase();
+        if (!NotificationService.groups.some(group => group.key === key)) return false;
+        collapsedGroups = collapsedGroups.filter(item => item !== key);
+        expandedGroups = expandedGroups.includes(key) ? expandedGroups.filter(item => item !== key)
+            : [...expandedGroups, key];
+        return true;
     }
-
-    function toggleDnd(): void {
-        NotificationService.toggleDnd();
+    Connections {
+        target: NotificationService
+        function onGroupsChanged() {
+            const keys = NotificationService.groups.map(group => group.key);
+            root.collapsedGroups = root.collapsedGroups.filter(key => keys.includes(key));
+            root.expandedGroups = root.expandedGroups.filter(key => keys.includes(key));
+        }
     }
-
-    function dismissAll(): void {
-        NotificationService.dismissAll();
-    }
+    readonly property bool centerOpen: UiState.active === "notifications"
+    function toggleCenter(): void { UiState.toggle("notifications"); }
+    function toggleDnd(): void { NotificationService.toggleDnd(); }
 
     IpcHandler {
         target: "notifications"
         function toggle(): void { root.toggleCenter(); }
-        function clear(): void { root.dismissAll(); }
+        function open(): void { UiState.show("notifications"); }
+        function close(): void { UiState.close("notifications"); }
+        function clear(): void { NotificationService.dismissAll(); }
         function dnd_toggle(): void { root.toggleDnd(); }
+        function preview(summary: string, body: string): bool {
+            return NotificationService.addPreview(summary, body);
+        }
+        function preview_app(app: string, summary: string, body: string): bool {
+            return NotificationService.addPreview(summary, body, app);
+        }
+        function group_toggle(app: string): bool { return root.toggleGroup(app); }
+        function group_expand(app: string): bool { return root.expandGroup(app); }
+        function group_dismiss(app: string): void { NotificationService.dismissGroup(app); }
+        function message_expand(sequence: int): bool {
+            for (let i = 0; i < notificationList.count; ++i) {
+                const group = notificationList.itemAtIndex(i);
+                if (group && group.expandBody(sequence)) return true;
+            }
+            return false;
+        }
+        function status(): string {
+            return JSON.stringify({mode: NotificationService.mode, count: root.count,
+                popups: NotificationService.popups.length, dnd: root.dnd, unread: root.unreadCount,
+                groups: NotificationService.groups.map((group, index) => ({key: group.key, name: group.name,
+                    rendered: notificationList.itemAtIndex(index) ? notificationList.itemAtIndex(index).shown.length : -1,
+                    font: notificationList.itemAtIndex(index) ? notificationList.itemAtIndex(index).resolvedFont : null,
+                    bodies: notificationList.itemAtIndex(index) ? notificationList.itemAtIndex(index).bodyStates() : [],
+                    count: group.records.length, collapsed: root.collapsedGroups.includes(group.key),
+                    shown: root.collapsedGroups.includes(group.key) ? 0
+                        : root.expandedGroups.includes(group.key) ? group.records.length : Math.min(3, group.records.length)})),
+                panel: {y: centerCard.y, height: centerCard.height, popupTop: popupWindow.margins.top},
+                summaries: NotificationService.notifications.map(record => record.summary),
+                records: NotificationService.notifications.map(record => ({
+                    id: record.notification ? record.notification.id : record.sequence, sequence: record.sequence,
+                    timeoutMs: record.timeoutMs, hovered: record.hovered, seen: record.seen,
+                    receivedAt: record.receivedAt}))});
+        }
     }
 
-    // Floating notification popups. SwayNC is positioned at the left/top in
-    // the current setup, so these intentionally use the same corner.
-    Variants {
-        model: Quickshell.screens
-
-        PanelWindow {
-            id: popupWindow
-            required property var modelData
-
-            screen: modelData
-            visible: !root.centerOpen && root.isFocused(modelData) && popupModel.values.length > 0
-            focusable: false
-            color: Theme.transparentColor
-            exclusionMode: ExclusionMode.Ignore
-
-            WlrLayershell.layer: WlrLayer.Overlay
-            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-            WlrLayershell.namespace: "quickshell-dev-notification-popups"
-
-            anchors {
-                top: true
-                left: true
-            }
-            margins {
-                top: 16
-                left: 16
-            }
-
-            implicitWidth: 400
-            implicitHeight: popupColumn.implicitHeight
-
-            ScriptModel {
-                id: popupModel
-                values: NotificationService.popups.filter(function(record) {
-                    return record.popupVisible;
-                })
-                objectProp: "sequence"
-            }
-
+    // One popup surface, on the current monitor. Never steals keyboard focus.
+    PanelWindow {
+        id: popupWindow
+        screen: {
+            const monitor = Hyprland.focusedMonitor;
+            return Quickshell.screens.find(s => monitor && s.name === monitor.name)
+                || Quickshell.screens[0] || null;
+        }
+        visible: UiState.active === "" && NotificationService.popups.length > 0
+        color: Theme.transparentColor
+        exclusionMode: ExclusionMode.Ignore
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+        WlrLayershell.namespace: "quickshell-dev-notification-popups"
+        anchors { top: true; left: true }
+        margins { top: UiState.topInset(popupWindow.screen); left: 16 }
+        implicitWidth: Math.min(400, screen ? screen.width - 32 : 400)
+        implicitHeight: Math.min(popupColumn.implicitHeight,
+            screen ? Math.max(1, screen.height - margins.top - 16) : 700)
+        Flickable {
+            anchors.fill: parent
+            contentHeight: popupColumn.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
             Column {
                 id: popupColumn
-                width: 400
+                width: popupWindow.width
                 spacing: 8
-
                 Repeater {
-                    model: popupModel
-
+                    model: ScriptModel { values: NotificationService.popups; objectProp: "sequence" }
                     NotificationCard {
                         required property var modelData
                         width: popupColumn.width
                         record: modelData
-                        centerCard: false
                     }
                 }
             }
         }
     }
 
-    // SwayNC's left/top control center. It is a full-screen transparent layer
-    // only while open so clicking outside the panel closes it.
-    Variants {
-        model: Quickshell.screens
+    OverlayWindow {
+        id: centerWindow
+        route: "notifications"
+        dimBackground: false
+        popIn: false
+        onOpenedChanged: if (opened) NotificationService.markRead()
 
-        PanelWindow {
-            id: centerWindow
-            required property var modelData
+        Rectangle {
+            id: centerCard
+            opacity: centerWindow.surfaceOpacity
+            x: 16
+            y: Math.min(UiState.topInset(centerWindow.screen), Math.max(12, parent.height - 200))
+            width: Math.min(380, parent.width - 32)
+            height: Math.max(0, Math.min(700, parent.height - y - 16))
+            radius: 12
+            color: Theme.background
+            border.color: Theme.outlineVariant
+            MouseArea { anchors.fill: parent }
 
-            screen: modelData
-            visible: root.centerOpen && root.isFocused(modelData)
-            focusable: true
-            color: Theme.transparentColor
-            exclusionMode: ExclusionMode.Ignore
-
-            WlrLayershell.layer: WlrLayer.Overlay
-            WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
-            WlrLayershell.namespace: "quickshell-dev-control-center"
-
-            anchors {
-                top: true
-                bottom: true
-                left: true
-                right: true
-            }
-
-            MouseArea {
+            ColumnLayout {
                 anchors.fill: parent
-                onClicked: root.centerOpen = false
-            }
+                anchors.margins: 12
+                spacing: 10
 
-            Rectangle {
-                id: centerPanel
-                x: 18
-                y: 18
-                width: 350
-                height: 700
-                radius: 10
-                color: Theme.backgroundAlpha
-                border.color: Theme.secondary
-                border.width: 1
-                z: 2
-
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: function(mouse) { mouse.accepted = true; }
+                RowLayout {
+                    Layout.fillWidth: true
+                    ThemeText {
+                        Layout.fillWidth: true
+                        text: "Notifications"
+                        color: Theme.surfaceText
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 18
+                        font.bold: true
+                    }
+                    ThemeButton {
+                        text: "󰀻"
+                        iconOnly: true
+                        onClicked: UiState.show("launcher")
+                        tooltip: "Applications"
+                    }
+                    ThemeButton {
+                        text: ""
+                        iconOnly: true
+                        onClicked: UiState.show("wallpaper")
+                        tooltip: "Wallpapers"
+                    }
+                    ThemeButton {
+                        text: "󰎟"
+                        iconOnly: true
+                        baseColor: Theme.controlBackground
+                        enabled: root.count > 0
+                        onClicked: NotificationService.dismissAll()
+                        tooltip: "Clear all notifications"
+                    }
                 }
 
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 12
-                    spacing: 8
+                ThemeText {
+                    Layout.fillWidth: true
+                    visible: NotificationService.mode === "preview"
+                    text: "Preview mode · SwayNC is still handling live notifications"
+                    wrapMode: Text.Wrap
+                    color: Theme.surfaceVariantText
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 11
+                }
 
-                    Item {
-                        Layout.fillWidth: true
-                        height: 2
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        height: 38
-                        radius: 10
-                        color: Theme.inversePrimary
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 12
-                            anchors.rightMargin: 8
-                            spacing: 8
-
-                            Text {
-                                text: SystemState.updateCount > 0 ? "" : ""
-                                color: Theme.primary
-                                font.family: Theme.iconFontFamily
-                                font.pixelSize: 16
-                            }
-
-                            Text {
-                                Layout.fillWidth: true
-                                text: SystemState.updateCount > 0
-                                    ? SystemState.updateCount + " updates available"
-                                    : "System up to date"
-                                color: Theme.primary
-                                font.family: Theme.iconFontFamily
-                                font.pixelSize: 12
-                            }
-
-                            Text {
-                                text: "󰑐"
-                                color: Theme.primary
-                                font.family: Theme.iconFontFamily
-                                font.pixelSize: 13
-                            }
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 42
+                    radius: 8
+                    color: Theme.controlBackground
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        ThemeText {
+                            Layout.fillWidth: true
+                            text: SystemState.updateCheckRunning ? "Checking updates…"
+                                : !SystemState.updatesKnown ? "Updates not checked"
+                                : SystemState.updateCount > 0 ? SystemState.updateCount + " updates available"
+                                : "System up to date"
+                            color: Theme.controlSurfaceText
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 12
+                            elide: Text.ElideRight
                         }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
+                        ThemeButton {
+                            text: ""
+                            iconOnly: true
+                            surfaceColor: Theme.controlBackground
+                            enabled: !SystemState.updateCheckRunning
+                            onClicked: SystemState.refreshUpdates()
+                            tooltip: "Check updates"
+                        }
+                        ThemeButton {
+                            text: ""
+                            iconOnly: true
+                            surfaceColor: Theme.controlBackground
                             onClicked: SystemState.runUpdates()
+                            tooltip: "Open updater in Kitty"
                         }
                     }
+                }
 
-                    Rectangle {
-                        id: mediaCard
-                        Layout.fillWidth: true
-                        height: 42
-                        radius: 10
-                        color: Theme.inversePrimary
-                        visible: activePlayer !== null
-
-                        property var activePlayer: {
-                            const players = Mpris.players.values;
-                            if (!players || players.length === 0) return null;
-                            for (const player of players) {
-                                if (player.isPlaying) return player;
-                            }
-                            return players[0];
-                        }
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 12
-                            anchors.rightMargin: 12
-                            spacing: 8
-
-                            Text {
-                                text: "󰎆"
-                                color: Theme.tertiary
-                                font.family: Theme.iconFontFamily
-                                font.pixelSize: 16
-                            }
-
-                            Text {
+                Rectangle {
+                    id: mediaCard
+                    Layout.fillWidth: true
+                    implicitHeight: 60
+                    radius: 8
+                    color: Theme.controlBackground
+                    visible: player !== null
+                    readonly property var player: Mpris.players.values.find(p => p.isPlaying)
+                        || Mpris.players.values[0] || null
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 4
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            ThemeText {
                                 Layout.fillWidth: true
-                                text: mediaCard.activePlayer
-                                    ? mediaCard.activePlayer.trackTitle : ""
-                                color: Theme.primary
-                                font.family: Theme.iconFontFamily
+                                text: mediaCard.player ? mediaCard.player.trackTitle || mediaCard.player.identity : ""
+                                color: Theme.controlSurfaceText
+                                font.family: Theme.fontFamily
                                 font.pixelSize: 12
                                 elide: Text.ElideRight
                             }
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                const player = mediaCard.activePlayer;
-                                if (player && player.canTogglePlaying) player.togglePlaying();
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        height: 38
-                        radius: 10
-                        color: Theme.transparentColor
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 12
-                            anchors.rightMargin: 12
-
-                            Text {
+                            ThemeText {
                                 Layout.fillWidth: true
-                                text: "Do not disturb"
-                                color: Theme.primary
-                                font.family: Theme.iconFontFamily
-                                font.pixelSize: 12
-                            }
-
-                            Rectangle {
-                                id: dndSwitch
-                                Layout.preferredWidth: 50
-                                Layout.preferredHeight: 26
-                                radius: 8
-                                color: NotificationService.dnd ? Theme.secondary : Theme.inversePrimary
-
-                                Rectangle {
-                                    id: dndKnob
-                                    width: 20
-                                    height: 20
-                                    radius: 6
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    x: NotificationService.dnd ? parent.width - width - 3 : 3
-                                    color: Theme.primary
-
-                                    Behavior on x {
-                                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                                    }
-                                }
+                                text: mediaCard.player ? mediaCard.player.trackArtist : ""
+                                color: Theme.alpha(Theme.controlSurfaceText, 0.8)
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 10
+                                elide: Text.ElideRight
                             }
                         }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.toggleDnd()
+                        ThemeButton {
+                            text: ""
+                            iconOnly: true
+                            surfaceColor: Theme.controlBackground
+                            enabled: !!mediaCard.player && mediaCard.player.canGoPrevious
+                            onClicked: mediaCard.player.previous()
+                            tooltip: "Previous track"
                         }
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-
-                        Text {
-                            Layout.fillWidth: true
-                            text: "Notifications"
-                            color: Theme.primary
-                            font.family: Theme.iconFontFamily
-                            font.bold: true
-                            font.pixelSize: 16
+                        ThemeButton {
+                            text: mediaCard.player && mediaCard.player.isPlaying ? "" : ""
+                            iconOnly: true
+                            surfaceColor: Theme.controlBackground
+                            enabled: !!mediaCard.player && mediaCard.player.canTogglePlaying
+                            onClicked: mediaCard.player.togglePlaying()
+                            tooltip: "Play / pause"
                         }
-
-                        Rectangle {
-                            width: 30
-                            height: 28
-                            radius: 8
-                            color: clearMouse.containsMouse ? Theme.secondary : Theme.inversePrimary
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "󰎟"
-                                color: Theme.primary
-                                font.family: Theme.iconFontFamily
-                                font.pixelSize: 15
-                            }
-
-                            MouseArea {
-                                id: clearMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root.dismissAll()
-                            }
-                        }
-                    }
-
-                    ListView {
-                        id: notificationList
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        clip: true
-                        spacing: 6
-                        boundsBehavior: Flickable.StopAtBounds
-                        model: ScriptModel {
-                            values: NotificationService.notifications
-                            objectProp: "sequence"
-                        }
-
-                        delegate: NotificationCard {
-                            required property var modelData
-                            width: notificationList.width
-                            record: modelData
-                            centerCard: true
-                        }
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: "No notifications"
-                            color: Theme.primary
-                            font.family: Theme.iconFontFamily
-                            font.pixelSize: 13
-                            visible: notificationList.count === 0
+                        ThemeButton {
+                            text: ""
+                            iconOnly: true
+                            surfaceColor: Theme.controlBackground
+                            enabled: !!mediaCard.player && mediaCard.player.canGoNext
+                            onClicked: mediaCard.player.next()
+                            tooltip: "Next track"
                         }
                     }
                 }
-            }
 
-            Item {
-                focus: centerWindow.visible
-                Keys.onEscapePressed: root.centerOpen = false
+                RowLayout {
+                    Layout.fillWidth: true
+                    ThemeText {
+                        Layout.fillWidth: true
+                        text: "Do not disturb"
+                        color: Theme.surfaceText
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 13
+                    }
+                    Switch {
+                        id: dndSwitch
+                        Layout.preferredWidth: 46
+                        Layout.preferredHeight: 26
+                        checked: root.dnd
+                        onClicked: root.toggleDnd()
+                        indicator: Rectangle {
+                            implicitWidth: 46
+                            implicitHeight: 24
+                            y: (dndSwitch.height - height) / 2
+                            radius: 8
+                            color: dndSwitch.hovered ? Theme.controlHoverBackground
+                                : dndSwitch.checked ? Theme.controlPressedBackground : Theme.controlBackground
+                            border.color: dndSwitch.activeFocus ? Theme.primary : Theme.outlineVariant
+                            Behavior on color {
+                                ColorAnimation { duration: Theme.controlDuration; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.cssEase }
+                            }
+                            Rectangle {
+                                width: 18; height: 18; radius: 9
+                                y: 3
+                                x: dndSwitch.checked ? 25 : 3
+                                color: Theme.controlText
+                                Behavior on x {
+                                    NumberAnimation { duration: Theme.controlDuration; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.cssEase }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    ThemeText {
+                        Layout.fillWidth: true
+                        text: root.count + (root.count === 1 ? " notification" : " notifications")
+                        color: Theme.surfaceVariantText
+                        font.pixelSize: 11
+                    }
+                    ThemeText {
+                        text: root.dnd ? "Popups paused" : "Popups enabled"
+                        color: root.dnd ? Theme.tertiary : Theme.surfaceVariantText
+                        font.pixelSize: 10
+                    }
+                }
+
+                ListView {
+                    id: notificationList
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    spacing: 8
+                    boundsBehavior: Flickable.StopAtBounds
+                    ScrollBar.vertical: ThemeScrollBar {}
+                    model: ScriptModel { values: NotificationService.groups; objectProp: "key" }
+                    delegate: NotificationGroup {
+                        required property var modelData
+                        width: notificationList.width - 8
+                        group: modelData
+                        collapsed: modelData ? root.collapsedGroups.includes(modelData.key) : false
+                        expanded: modelData ? root.expandedGroups.includes(modelData.key) : false
+                        onToggleRequested: if (modelData) root.toggleGroup(modelData.key)
+                        onExpandRequested: if (modelData) root.expandGroup(modelData.key)
+                    }
+                    ThemeText {
+                        anchors.centerIn: parent
+                        text: "No notifications"
+                        color: Theme.surfaceVariantText
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 13
+                        visible: notificationList.count === 0
+                    }
+                }
             }
         }
     }

@@ -40,16 +40,11 @@ Singleton {
         return clock.hours >= 17 || clock.hours < 5 ? "" : "󰃠";
     }
 
-    readonly property int batteryPercent: {
-        if (!root.battery || !root.battery.ready) return 0;
-        const percentage = Number(root.battery.percentage);
-        // UPower versions expose this either as 0..1 or 0..100.
-        return Math.round(percentage <= 1 ? percentage * 100 : percentage);
-    }
-    readonly property bool batteryCharging: {
-        if (!root.battery || !root.battery.ready) return false;
-        return root.battery.changeRate > 0 || !UPower.onBattery;
-    }
+    readonly property bool batteryAvailable: Boolean(root.battery && root.battery.ready && root.battery.isPresent)
+    readonly property int batteryPercent: batteryAvailable
+        ? Math.round(root.battery.percentage * 100) : 0
+    readonly property bool batteryCharging: batteryAvailable
+        && root.battery.state === UPowerDeviceState.Charging
     readonly property color batteryWarning: Theme.primaryFixed
     readonly property string batteryIcon: {
         if (root.batteryPercent <= 10) return "";
@@ -61,6 +56,7 @@ Singleton {
 
     property int updateCount: 0
     property bool updateCheckRunning: false
+    property bool updatesKnown: false
 
     SystemClock {
         id: clock
@@ -83,6 +79,7 @@ Singleton {
         stdout: StdioCollector {
             onStreamFinished: {
                 const lines = this.text.trim().split(/\s+/);
+                root.brightnessAvailable = false;
                 const current = Number(lines[0]);
                 const maximum = Number(lines[1]);
                 if (Number.isFinite(current) && Number.isFinite(maximum) && maximum > 0) {
@@ -112,6 +109,7 @@ Singleton {
             onStreamFinished: {
                 const count = Number(this.text.trim());
                 root.updateCount = Number.isFinite(count) ? count : 0;
+                root.updatesKnown = Number.isFinite(count);
                 root.updateCheckRunning = false;
             }
         }
@@ -122,7 +120,7 @@ Singleton {
 
     Timer {
         interval: 300000
-        running: true
+        running: UiState.active === "notifications"
         repeat: true
         onTriggered: root.refreshUpdates()
     }
@@ -136,7 +134,6 @@ Singleton {
 
     Component.onCompleted: {
         brightnessProcess.running = true;
-        root.refreshUpdates();
     }
 
     function refreshUpdates(): void {
@@ -159,6 +156,13 @@ Singleton {
 
     function adjustBrightness(delta): void {
         Quickshell.execDetached(["brightnessctl", "set", delta > 0 ? "5%+" : "5%-"]);
-        brightnessProcess.running = true;
+        // Poll after the command finishes instead of racing its old value.
+        brightnessRefresh.restart();
+    }
+
+    Timer {
+        id: brightnessRefresh
+        interval: 150
+        onTriggered: if (!brightnessProcess.running) brightnessProcess.running = true
     }
 }

@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Quickshell.Hyprland
 import Quickshell.Widgets
 import Quickshell.Services.SystemTray
@@ -8,18 +9,83 @@ Scope {
     id: root
 
     property var notificationUi: null
+    property var barWindows: []
+    readonly property var trayItems: SystemTray.items.values.slice().sort((a, b) => {
+        // Preserve the current desktop's network/Bluetooth order even when
+        // asynchronous DBus discovery completes in a different order on reload.
+        const order = ["nm-applet", "blueman"];
+        const rank = item => order.includes(item.id) ? order.indexOf(item.id) : order.length;
+        return rank(a) - rank(b) || a.id.localeCompare(b.id);
+    })
 
-    readonly property var currentMonitor: Hyprland.focusedMonitor
+    // The click path and CLI verification share this dispatcher. Exported menus
+    // take precedence over Activate (nm-applet exports a menu but onlyMenu=false).
+    Connections {
+        target: UiState
+        function onActiveChanged() {
+            if (UiState.active !== "") for (const window of root.barWindows) window.trayMenu.close();
+        }
+    }
+    function clickTray(item, target, button, menu): void {
+        if (button === Qt.MiddleButton) item.secondaryActivate();
+        else if (item.hasMenu) { UiState.close(""); menu.open(target, item); }
+        else if (button === Qt.LeftButton) item.activate();
+    }
 
-    function isFocused(screen) {
-        const monitor = Hyprland.monitorFor(screen);
-        return !Hyprland.focusedMonitor ||
-            (monitor && monitor.name === Hyprland.focusedMonitor.name);
+    IpcHandler {
+        target: "tray"
+        function items(): string {
+            return JSON.stringify(SystemTray.items.values.map(item => ({id: item.id, title: item.title,
+                hasMenu: item.hasMenu, onlyMenu: item.onlyMenu})));
+        }
+        function open(id: string): bool {
+            const item = SystemTray.items.values.find(item => item.id === id);
+            if (!item || !item.hasMenu) return false;
+            for (const window of root.barWindows) {
+                for (let i = 0; i < window.trayRepeater.count; ++i) {
+                    const target = window.trayRepeater.itemAt(i);
+                    if (target && target.modelData === item) {
+                        root.clickTray(item, target, Qt.LeftButton, window.trayMenu);
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        function close(): void { for (const window of root.barWindows) window.trayMenu.close(); }
+        function submenu(label: string): bool {
+            for (const window of root.barWindows) {
+                const menu = window.trayMenu;
+                const entry = menu.visible && menu.entries.find(entry => entry.text === label && entry.enabled && entry.hasChildren);
+                if (entry) { menu.choose(entry); return true; }
+            }
+            return false;
+        }
+        function back(): void { for (const window of root.barWindows) if (window.trayMenu.visible) window.trayMenu.back(); }
+        function next(): void { for (const window of root.barWindows) if (window.trayMenu.visible) window.trayMenu.navigate(1); }
+        function status(): string {
+            return JSON.stringify(root.barWindows.map(window => ({screen: window.screen.name,
+                open: window.trayMenu.visible, depth: window.trayMenu.menuPath.length,
+                selected: window.trayMenu.selectedIndex,
+                hoverPoint: window.trayMenu.visible ? window.trayMenu.hoverPoint() : null,
+                entries: window.trayMenu.entries.map(entry => ({text: entry.text, enabled: entry.enabled,
+                    submenu: entry.hasChildren, separator: entry.isSeparator}))})));
+        }
+    }
+
+    IpcHandler {
+        target: "bar"
+        function geometry(): string {
+            return JSON.stringify(root.barWindows.map(window => window.geometry()));
+        }
     }
 
     function appIcon(toplevel) {
-        const appId = toplevel && toplevel.wayland ? toplevel.wayland.appId : "";
-        return appId ? Quickshell.iconPath(appId, true) : "";
+        if (!toplevel) return "";
+        const appId = toplevel.wayland ? toplevel.wayland.appId
+            : (toplevel.lastIpcObject.class || "");
+        const entry = appId ? DesktopEntries.heuristicLookup(appId) : null;
+        return appId ? Quickshell.iconPath(entry && entry.icon ? entry.icon : appId, true) : "";
     }
 
     Variants {
@@ -28,6 +94,31 @@ Scope {
         PanelWindow {
             id: barWindow
             required property var modelData
+            property alias trayRepeater: trayRepeater
+            property alias trayMenu: trayMenu
+            function geometry() {
+                const bounds = item => ({x: item.mapToItem(barContent, 0, 0).x, y: item.y,
+                    width: item.width, height: item.height});
+                return {screen: screen.name, modules: {notification: bounds(notificationPill),
+                    workspaces: bounds(workspacePill), clock: bounds(clockPill), tray: bounds(trayPill),
+                    brightness: bounds(brightnessPill), volume: bounds(volumePill), battery: bounds(batteryPill)},
+                    workspaces: Array.from({length: workspaceRepeater.count}, (_, i) => {
+                        const button = workspaceRepeater.itemAt(i);
+                        return {id: button.modelData.id, focused: button.modelData.focused, bounds: bounds(button),
+                            width: button.width, targetWidth: button.targetWidth, height: button.height,
+                            animating: button.widthAnimationRunning};
+                    }), tray: Array.from({length: trayRepeater.count}, (_, i) => {
+                        const item = trayRepeater.itemAt(i);
+                        return {id: item.modelData.id, bounds: bounds(item), icon: item.modelData.icon,
+                            imageWidth: item.iconImage.width, imageHeight: item.iconImage.height,
+                            sourceWidth: item.iconImage.backer.sourceSize.width,
+                            naturalWidth: item.iconImage.backer.implicitWidth, resolvedPath: item.iconImage.resolvedPath,
+                            lookupPending: item.iconImage.lookupPending};
+                    })};
+            }
+            Component.onCompleted: root.barWindows = [...root.barWindows, barWindow]
+            Component.onDestruction: root.barWindows = root.barWindows.filter(window => window !== barWindow)
+            TrayMenu { id: trayMenu }
 
             screen: modelData
             color: Theme.transparentColor
@@ -57,27 +148,30 @@ Scope {
 
                     // Same Arch notification glyph used by the current
                     // custom/notification Waybar module.
-                    Rectangle {
+                    BarPill {
                         id: notificationPill
-                        implicitWidth: notificationText.implicitWidth + 30
-                        implicitHeight: 30
-                        radius: 15
-                        color: Theme.background
-                        border.color: Theme.outlineVariant
-                        border.width: 1
+                        implicitWidth: notificationRow.implicitWidth + 2 * Theme.barPadding
 
-                        Text {
-                            id: notificationText
+                        Row {
+                            id: notificationRow
                             anchors.centerIn: parent
-                            text: ""
-                            color: {
-                                if (!root.notificationUi) return "#ffffff";
-                                if (root.notificationUi.dnd) return Theme.error;
-                                if (root.notificationUi.count > 0) return Theme.tertiary;
-                                return "#ffffff";
+                            spacing: 5
+                            GlyphIcon {
+                                anchors.verticalCenter: parent.verticalCenter
+                                glyph: ""
+                                color: !root.notificationUi ? Theme.notificationIdle
+                                    : root.notificationUi.dnd ? Theme.error
+                                    : root.notificationUi.unreadCount > 0 ? Theme.tertiary : Theme.notificationIdle
+                                font: Theme.barIconFont
                             }
-                            font.family: Theme.iconFontFamily
-                            font.pixelSize: 15
+                            ThemeText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: root.notificationUi && root.notificationUi.unreadCount > 0
+                                text: root.notificationUi ? Math.min(99, root.notificationUi.unreadCount) : ""
+                                color: Theme.surfaceText
+                                font.family: Theme.barFontFamily
+                                font.pixelSize: 10
+                            }
                         }
 
                         MouseArea {
@@ -103,56 +197,72 @@ Scope {
                         }
                     }
 
-                    Rectangle {
+                    BarPill {
                         id: workspacePill
-                        implicitWidth: workspaceRow.implicitWidth + 12
-                        implicitHeight: 30
-                        radius: 15
-                        color: Theme.background
-                        border.color: Theme.outlineVariant
-                        border.width: 1
+                        implicitWidth: workspaceRow.implicitWidth + 14 // border + padding + button margins
 
                         Row {
                             id: workspaceRow
                             anchors.centerIn: parent
-                            spacing: 3
+                            spacing: 6 // the two adjacent GTK button margins
 
                             Repeater {
-                                model: Hyprland.workspaces
+                                id: workspaceRepeater
+                                model: ScriptModel {
+                                    objectProp: "id"
+                                    values: Hyprland.workspaces.values.filter(w => w.id > 0
+                                        && w.monitor && w.monitor.name === barWindow.screen.name)
+                                        .sort((a, b) => a.id - b.id)
+                                }
 
                                 Rectangle {
                                     id: workspaceButton
                                     required property var modelData
 
-                                    implicitWidth: Math.max(modelData.focused ? 40 : 26,
-                                        workspaceInner.implicitWidth + 12)
-                                    implicitHeight: 20
-                                    radius: 10
-                                    color: modelData.focused ? Theme.secondary
-                                         : modelData.urgent ? Theme.error
-                                         : workspaceMouse.containsMouse ? Theme.primaryContainer
+                                    readonly property real targetWidth: Math.max(modelData.focused || modelData.urgent
+                                        || workspaceMouse.containsMouse ? 40 : 0, workspaceInner.implicitWidth) + 12
+                                    readonly property bool widthAnimationRunning: workspaceWidthAnimation.running
+                                    implicitWidth: targetWidth
+                                    implicitHeight: Theme.workspaceHeight
+                                    radius: Theme.workspaceHeight / 2
+                                    color: modelData.urgent ? Theme.error
+                                         : workspaceMouse.containsMouse ? Theme.barHoverBackground
+                                         : modelData.focused ? Theme.secondary
                                          : Theme.background
 
                                     Behavior on implicitWidth {
-                                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                                        NumberAnimation {
+                                            id: workspaceWidthAnimation
+                                            duration: Theme.workspaceDuration
+                                            easing.type: Easing.BezierSpline
+                                            easing.bezierCurve: Theme.cssEaseInOut
+                                        }
                                     }
                                     Behavior on color {
-                                        ColorAnimation { duration: 150 }
+                                        ColorAnimation {
+                                            duration: Theme.workspaceDuration
+                                            easing.type: Easing.BezierSpline
+                                            easing.bezierCurve: Theme.cssEaseInOut
+                                        }
                                     }
 
                                     Row {
                                         id: workspaceInner
                                         anchors.centerIn: parent
-                                        spacing: 4
+                                        spacing: workspaceSpace.advanceWidth
+                                        TextMetrics { id: workspaceSpace; font: Theme.barFont; text: " " }
 
-                                        Text {
+                                        ThemeText {
+                                            anchors.verticalCenter: parent.verticalCenter
                                             text: workspaceButton.modelData.name || workspaceButton.modelData.id
-                                            color: workspaceButton.modelData.focused ? Theme.secondaryText
-                                                   : workspaceButton.modelData.urgent ? Theme.errorText
+                                            color: workspaceButton.modelData.urgent ? Theme.errorText
+                                                   : workspaceMouse.containsMouse ? Theme.barHoverText
+                                                   : workspaceButton.modelData.focused ? Theme.secondaryText
                                                    : Theme.surfaceText
-                                            font.family: Theme.iconFontFamily
-                                            font.pixelSize: 11
-                                            font.bold: workspaceButton.modelData.focused
+                                            font: Theme.barFont
+                                            Behavior on color {
+                                                ColorAnimation { duration: Theme.workspaceDuration; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.cssEaseInOut }
+                                            }
                                         }
 
                                         Repeater {
@@ -160,6 +270,7 @@ Scope {
 
                                             Item {
                                                 id: toplevelIcon
+                                                anchors.verticalCenter: parent.verticalCenter
                                                 required property var modelData
                                                 width: 15
                                                 height: 15
@@ -174,13 +285,12 @@ Scope {
                                                     visible: source !== ""
                                                 }
 
-                                                Text {
+                                                GlyphIcon {
                                                     anchors.centerIn: parent
-                                                    text: ""
-                                                    color: workspaceButton.modelData.focused
-                                                        ? Theme.secondaryText : Theme.surfaceVariantText
-                                                    font.family: Theme.iconFontFamily
-                                                    font.pixelSize: 11
+                                                    glyph: ""
+                                                    color: workspaceMouse.containsMouse ? Theme.barHoverText
+                                                        : workspaceButton.modelData.focused ? Theme.secondaryText : Theme.surfaceVariantText
+                                                    font: Theme.barIconFont
                                                     visible: toplevelImage.source === ""
                                                 }
                                             }
@@ -200,61 +310,41 @@ Scope {
                     }
                 }
 
-                Rectangle {
+                BarPill {
                     id: clockPill
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.verticalCenter: parent.verticalCenter
-                    implicitWidth: clockText.implicitWidth + 30
-                    implicitHeight: 30
-                    radius: 15
-                    color: Theme.background
-                    border.color: Theme.outlineVariant
-                    border.width: 1
+                    anchors.horizontalCenterOffset: 4 // centered GTK module includes its left margin
+                    implicitWidth: clockText.implicitWidth + 2 * Theme.barPadding
 
                     SystemClock {
                         id: clock
                         precision: SystemClock.Minutes
                     }
 
-                    Text {
+                    ThemeText {
                         id: clockText
                         anchors.centerIn: parent
                         // Match Waybar `{:%I:%M %p}` (12-hour, zero-padded).
                         text: Qt.locale("en_US").toString(clock.date, "hh:mm AP")
                         color: Theme.inversePrimary
-                        font.family: Theme.fontFamily
-                        font.bold: true
-                        font.pixelSize: 15
+                        font: Theme.barFont
                     }
 
-                    Rectangle {
-                        id: clockTooltip
-                        anchors.top: parent.bottom
-                        anchors.topMargin: 6
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        width: clockTooltipText.implicitWidth + 16
-                        height: clockTooltipText.implicitHeight + 10
-                        radius: 6
-                        color: Theme.background
-                        border.color: Theme.outlineVariant
-                        border.width: 1
-                        visible: clockMouse.containsMouse
-                        z: 20
-
-                        Text {
-                            id: clockTooltipText
-                            anchors.centerIn: parent
-                            text: Qt.formatDateTime(clock.date, "MM-dd-yyyy")
-                            color: Theme.surfaceText
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 11
-                        }
+                    BarTooltip {
+                        target: clockPill
+                        hovered: clockMouse.containsMouse
+                        text: Qt.formatDateTime(clock.date, "MM-dd-yyyy")
+                            + "\nLeft click: apps · Right click: wallpapers"
                     }
 
                     MouseArea {
                         id: clockMouse
                         anchors.fill: parent
                         hoverEnabled: true
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: mouse => UiState.toggle(mouse.button === Qt.RightButton ? "wallpaper" : "launcher")
                     }
                 }
 
@@ -264,127 +354,131 @@ Scope {
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 8
 
-                    Rectangle {
+                    BarPill {
                         id: trayPill
                         visible: SystemTray.items.values.length > 0
-                        implicitWidth: trayRow.implicitWidth + 20
-                        implicitHeight: 30
-                        radius: 15
-                        color: Theme.background
-                        border.color: Theme.outlineVariant
-                        border.width: 1
+                        implicitWidth: trayRow.implicitWidth + 2 * Theme.barPadding
 
                         Row {
                             id: trayRow
                             anchors.centerIn: parent
-                            spacing: 6
+                            spacing: Theme.traySpacing
 
                             Repeater {
-                                model: SystemTray.items
+                                id: trayRepeater
+                                model: ScriptModel { values: root.trayItems; objectProp: "id" }
 
                                 MouseArea {
                                     id: trayItem
                                     required property var modelData
-                                    width: 16
-                                    height: 20
+                                    property alias iconImage: trayIcon
+                                    width: Theme.barImageSize
+                                    height: Theme.barImageSize
                                     hoverEnabled: true
                                     acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
                                     cursorShape: Qt.PointingHandCursor
 
-                                    IconImage {
+                                    TrayIcon {
+                                        id: trayIcon
                                         anchors.centerIn: parent
-                                        source: trayItem.modelData.icon
-                                        implicitSize: 15
+                                        icon: trayItem.modelData.icon
                                     }
 
-                                    onClicked: function(mouse) {
-                                        if (mouse.button === Qt.LeftButton)
-                                            trayItem.modelData.activate();
-                                        else if (mouse.button === Qt.MiddleButton)
-                                            trayItem.modelData.secondaryActivate();
-                                        else
-                                            trayItem.modelData.display(barWindow, trayItem.x, trayItem.y + trayItem.height);
+                                    BarTooltip {
+                                        target: trayItem
+                                        hovered: trayItem.containsMouse
+                                        text: trayItem.modelData.tooltipTitle || trayItem.modelData.title
                                     }
+                                    onWheel: wheel => trayItem.modelData.scroll(
+                                        wheel.angleDelta.x || wheel.angleDelta.y, wheel.angleDelta.x !== 0)
+                                    onClicked: mouse => root.clickTray(trayItem.modelData, trayItem, mouse.button, trayMenu)
                                 }
                             }
                         }
                     }
 
-                    Rectangle {
+                    BarPill {
                         id: brightnessPill
                         visible: SystemState.brightnessAvailable
-                        implicitWidth: brightnessText.implicitWidth + 30
-                        implicitHeight: 30
-                        radius: 15
-                        color: Theme.background
-                        border.color: Theme.outlineVariant
-                        border.width: 1
+                        implicitWidth: brightnessText.implicitWidth + 2 * Theme.barPadding
 
-                        Text {
+                        BarLabel {
                             id: brightnessText
                             anchors.centerIn: parent
-                            text: SystemState.brightnessPercent + "% " + SystemState.brightnessIcon
+                            text: SystemState.brightnessPercent + "%"
+                            icon: SystemState.brightnessIcon
                             color: Theme.secondary
-                            font.family: Theme.iconFontFamily
-                            font.pixelSize: 13
                         }
 
+                        BarTooltip {
+                            target: brightnessPill
+                            hovered: brightnessMouse.containsMouse
+                            text: "Brightness · " + SystemState.brightnessPercent + "%\nScroll to adjust"
+                        }
                         MouseArea {
+                            id: brightnessMouse
                             anchors.fill: parent
+                            hoverEnabled: true
                             acceptedButtons: Qt.NoButton
                             onWheel: function(wheel) {
-                                SystemState.adjustBrightness(wheel.angleDelta.y);
+                                if (wheel.angleDelta.y !== 0) SystemState.adjustBrightness(wheel.angleDelta.y);
                             }
                         }
                     }
 
-                    Rectangle {
+                    BarPill {
                         id: volumePill
-                        implicitWidth: volumeText.implicitWidth + 30
-                        implicitHeight: 30
-                        radius: 15
-                        color: Theme.background
-                        border.color: Theme.outlineVariant
-                        border.width: 1
+                        implicitWidth: volumeText.implicitWidth + 2 * Theme.barPadding
 
-                        Text {
+                        BarLabel {
                             id: volumeText
                             anchors.centerIn: parent
-                            text: SystemState.volumePercent + "% " + SystemState.volumeIcon
+                            text: SystemState.volumePercent + "%"
+                            icon: SystemState.volumeIcon
                             color: Theme.tertiary
-                            font.family: Theme.iconFontFamily
-                            font.pixelSize: 13
                         }
 
+                        BarTooltip {
+                            target: volumePill
+                            hovered: volumeMouse.containsMouse
+                            text: (SystemState.audioSink ? SystemState.audioSink.description : "No audio output")
+                                + "\n" + (SystemState.muted ? "Muted" : SystemState.volumePercent + "%")
+                                + " · Click to mute · Scroll to adjust"
+                        }
                         MouseArea {
+                            id: volumeMouse
                             anchors.fill: parent
+                            hoverEnabled: true
                             acceptedButtons: Qt.LeftButton
                             cursorShape: Qt.PointingHandCursor
                             onClicked: SystemState.toggleMute()
                             onWheel: function(wheel) {
-                                SystemState.adjustVolume(wheel.angleDelta.y > 0 ? 0.02 : -0.02);
+                                if (wheel.angleDelta.y !== 0)
+                                    SystemState.adjustVolume(wheel.angleDelta.y > 0 ? 0.02 : -0.02);
                             }
                         }
                     }
 
-                    Rectangle {
+                    BarPill {
                         id: batteryPill
-                        implicitWidth: batteryText.implicitWidth + 30
-                        implicitHeight: 30
-                        radius: 15
-                        color: Theme.background
-                        border.color: Theme.outlineVariant
-                        border.width: 1
+                        visible: SystemState.batteryAvailable
+                        implicitWidth: batteryText.implicitWidth + 2 * Theme.barPadding
 
-                        Text {
+                        BarLabel {
                             id: batteryText
                             anchors.centerIn: parent
-                            text: SystemState.batteryPercent + "% " + SystemState.batteryIcon
+                            text: SystemState.batteryPercent + "%"
+                            icon: SystemState.batteryIcon // Waybar uses one glyph, including while charging
                             color: SystemState.batteryPercent <= 20 ? Theme.error
                                    : SystemState.batteryPercent <= 40 ? SystemState.batteryWarning
                                    : Theme.primary
-                            font.family: Theme.iconFontFamily
-                            font.pixelSize: 13
+                        }
+                        HoverHandler { id: batteryHover }
+                        BarTooltip {
+                            target: batteryPill
+                            hovered: batteryHover.hovered
+                            text: (SystemState.batteryCharging ? "Charging" : SystemState.batteryPercent >= 99
+                                ? "Fully charged" : "On battery") + " · " + SystemState.batteryPercent + "%"
                         }
                     }
                 }

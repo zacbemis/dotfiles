@@ -1,383 +1,241 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
-import Quickshell.Hyprland
 import Quickshell.Io
-import Quickshell.Wayland
 
 Scope {
     id: root
 
-    property bool open: false
-    property string searchText: ""
     property var wallpapers: []
-    property int selectedIndex: 0
-    readonly property string wallpaperDirectory: (Quickshell.env("HOME") || "") + "/Pictures/wallpapers"
-    readonly property string setter: (Quickshell.env("HOME") || "") + "/.config/hypr/scripts/set-wallpaper.sh"
-    readonly property string thumbDirectory: (Quickshell.env("HOME") || "") + "/.cache/rofi-wallpaper-thumbs"
+    property string errorMessage: ""
+    readonly property string home: Quickshell.env("HOME") || ""
+    readonly property string wallpaperDirectory: Quickshell.env("WALL_DIR") || home + "/Pictures/wallpapers"
+    readonly property string setter: Quickshell.env("SETTER") || home + "/.config/hypr/scripts/set-wallpaper.sh"
+    readonly property var filtered: wallpapers.filter(entry =>
+        entry.name.toLowerCase().includes(picker.query.trim().toLowerCase()))
+    readonly property var selected: filtered[picker.selectedIndex] || null
 
-    function thumbSource(path): string {
-        const base = path.split("/").pop();
-        return "file://" + root.thumbDirectory + "/" + base + ".png";
-    }
-
-    function isFocused(screen) {
-        const monitor = Hyprland.monitorFor(screen);
-        return !Hyprland.focusedMonitor ||
-            (monitor && monitor.name === Hyprland.focusedMonitor.name);
-    }
-
-    function toggle(): void {
-        root.open = !root.open;
-        if (root.open) {
-            root.searchText = "";
-            root.selectedIndex = 0;
-            root.rescan();
+    function rescan(): void {
+        if (!scanner.running) {
+            errorMessage = "";
+            scanner.running = true;
         }
     }
 
-    function rescan(): void {
-        if (!scanner.running) scanner.running = true;
-    }
-
-    function apply(path): void {
-        if (!path) return;
-        Quickshell.execDetached([root.setter, path]);
-        root.open = false;
+    function apply(): void {
+        if (!selected || setterProcess.running) return;
+        errorMessage = "";
+        setterProcess.command = ["bash", root.setter, selected.path];
+        setterProcess.running = true;
     }
 
     IpcHandler {
         target: "wallpaper"
-        function toggle(): void { root.toggle(); }
-    }
-
-    readonly property var filteredWallpapers: {
-        const query = root.searchText.trim().toLowerCase();
-        return root.wallpapers.filter(function(path) {
-            return query === "" || path.split("/").pop().toLowerCase().includes(query);
-        });
+        function toggle(): void { UiState.toggle("wallpaper"); }
+        function open(): void { UiState.show("wallpaper"); }
+        function close(): void { UiState.close("wallpaper"); }
+        function search(query: string): void { UiState.show("wallpaper"); picker.query = query; }
+        function results(): string { return JSON.stringify(root.filtered); }
+        function activate(): void { root.apply(); }
+        function select(index: int): void { picker.select(index); }
+        // Development-only sizing hook: exercise narrow cards without changing
+        // monitor resolution or the live desktop's output layout.
+        function size(width: int, height: int): void {
+            picker.preferredWidth = Math.max(260, Math.min(1200, width));
+            picker.preferredHeight = Math.max(260, Math.min(900, height));
+        }
+        function status(): string {
+            return JSON.stringify({selected: picker.selectedIndex, path: root.selected ? root.selected.path : "",
+                current: Boolean(root.selected && root.selected.current), busy: setterProcess.running,
+                scanning: scanner.running, compact: contentLayout.columns === 1, previewVisible: previewCard.visible});
+        }
     }
 
     Process {
         id: scanner
-        command: [
-            "sh", "-c",
-            "find \"$HOME/Pictures/wallpapers\" -type f \\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \\) -print 2>/dev/null | sort"
-        ]
-        running: false
-
+        command: ["python3", Quickshell.shellPath("wallpaper-scan.py"),
+            root.wallpaperDirectory, root.home + "/.config/hypr/current_wallpaper"]
         stdout: StdioCollector {
             onStreamFinished: {
-                const output = this.text.trim();
-                root.wallpapers = output === "" ? [] : output.split("\n").filter(path => path !== "");
-                root.selectedIndex = root.filteredWallpapers.length > 0 ? 0 : -1;
+                try {
+                    root.wallpapers = JSON.parse(text || "[]");
+                    const current = root.filtered.findIndex(entry => entry.current);
+                    picker.select(current >= 0 ? current : 0);
+                } catch (error) {
+                    root.wallpapers = [];
+                    root.errorMessage = "Could not read wallpaper list";
+                }
             }
+        }
+        onExited: function(code) {
+            if (code !== 0) root.errorMessage = "Could not scan " + root.wallpaperDirectory;
         }
     }
 
-    Component.onCompleted: root.rescan()
-
-    onSearchTextChanged: {
-        root.selectedIndex = root.filteredWallpapers.length > 0 ? 0 : -1;
+    Process {
+        id: setterProcess
+        onExited: function(code) {
+            if (code === 0) UiState.close("wallpaper");
+            else root.errorMessage = "Wallpaper setter failed (exit " + code + ")";
+        }
     }
 
-    Variants {
-        model: Quickshell.screens
+    PickerWindow {
+        id: picker
+        route: "wallpaper"
+        title: "Wallpapers"
+        preferredWidth: 820
+        preferredHeight: 500
+        itemCount: root.filtered.length
+        actionText: "apply"
+        statusText: scanner.running ? "Scanning…" : itemCount + " images"
+        refreshable: true
+        onRefreshRequested: root.rescan()
+        onActivated: root.apply()
+        onVisibleChanged: if (visible) root.rescan()
 
-        PanelWindow {
-            id: wallpaperWindow
-            required property var modelData
+        GridLayout {
+            id: contentLayout
+            anchors.fill: parent
+            columns: width < 600 ? 1 : 2
+            rowSpacing: 12
+            columnSpacing: 16
 
-            screen: modelData
-            visible: root.open && root.isFocused(modelData)
-            focusable: true
-            color: Theme.transparentColor
-            exclusionMode: ExclusionMode.Ignore
+            ListView {
+                id: results
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.preferredWidth: 330
+                Layout.preferredHeight: contentLayout.columns === 1 ? 150 : 300
+                model: root.filtered
+                currentIndex: picker.selectedIndex
+                onCurrentIndexChanged: if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain)
+                clip: true
+                spacing: 5
+                boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.vertical: ThemeScrollBar {}
 
-            WlrLayershell.layer: WlrLayer.Overlay
-            WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
-            WlrLayershell.namespace: "quickshell-dev-wallpaper"
+                delegate: Rectangle {
+                    id: wallpaperRow
+                    required property var modelData
+                    required property int index
+                    readonly property bool selected: picker.selectedIndex === index
+                    width: results.width - 10
+                    height: 58
+                    radius: 8
+                    color: selected || mouse.containsMouse ? Theme.pickerSelectedBackground : Theme.transparentColor
 
-            anchors {
-                top: true
-                bottom: true
-                left: true
-                right: true
-            }
-
-            Rectangle {
-                anchors.fill: parent
-                color: Theme.scrim
-
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: root.open = false
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        spacing: 10
+                        Rectangle {
+                            Layout.preferredWidth: 64
+                            Layout.preferredHeight: 44
+                            color: Theme.panelSurface
+                            radius: 4
+                            clip: true
+                            Image {
+                                id: thumbnail
+                                anchors.fill: parent
+                                source: Theme.fileUrl(wallpaperRow.modelData.path)
+                                sourceSize { width: 128; height: 88 }
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                            }
+                            ThemeText {
+                                anchors.centerIn: parent
+                                text: thumbnail.status === Image.Error ? "" : "…"
+                                color: Theme.surfaceVariantText
+                                visible: thumbnail.status !== Image.Ready
+                            }
+                        }
+                        ThemeText {
+                            Layout.fillWidth: true
+                            text: wallpaperRow.modelData.name
+                            color: wallpaperRow.selected || mouse.containsMouse ? Theme.pickerSelectedText : Theme.surfaceText
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 12
+                            elide: Text.ElideMiddle
+                        }
+                        GlyphIcon {
+                            glyph: ""
+                            visible: wallpaperRow.modelData.current
+                            color: wallpaperRow.selected || mouse.containsMouse ? Theme.pickerSelectedText : Theme.primary
+                        }
+                    }
+                    MouseArea {
+                        id: mouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: picker.select(wallpaperRow.index)
+                        onDoubleClicked: { picker.select(wallpaperRow.index); root.apply(); }
+                    }
                 }
             }
 
             Rectangle {
-                id: wallpaperBox
-                anchors.centerIn: parent
-                width: 600
-                height: 430
+                id: previewCard
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.preferredWidth: 370
+                Layout.preferredHeight: 250
+                visible: contentLayout.columns > 1 || contentLayout.height > 300
                 radius: 10
-                color: Theme.background
-                border.color: Theme.outlineVariant
-                border.width: 1
-                z: 2
-
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: function(mouse) { mouse.accepted = true; }
-                }
+                color: Theme.panelSurface
+                clip: true
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 30
+                    anchors.margins: 12
                     spacing: 10
-
-                    RowLayout {
-                        Layout.fillWidth: true
-
-                        Text {
-                            text: "  Wallpapers"
-                            color: Theme.surfaceText
-                            font.family: Theme.iconFontFamily
-                            font.bold: true
-                            font.pixelSize: 14
-                        }
-
-                        Item { Layout.fillWidth: true }
-
-                        Text {
-                            text: root.filteredWallpapers.length + " images"
-                            color: Theme.surfaceVariantText
-                            font.family: Theme.iconFontFamily
-                            font.pixelSize: 10
-                        }
-
-                        Rectangle {
-                            width: 28
-                            height: 26
-                            radius: 8
-                            color: refreshMouse.containsMouse ? Theme.surfaceContainerHigh : Theme.transparentColor
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "󰑐"
-                                color: Theme.surfaceVariantText
-                                font.family: Theme.iconFontFamily
-                                font.pixelSize: 14
-                            }
-
-                            MouseArea {
-                                id: refreshMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root.rescan()
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        height: 38
-                        radius: 8
-                        color: Theme.transparentColor
-                        border.color: searchInput.activeFocus ? Theme.primary : Theme.outlineVariant
-                        border.width: 1
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 12
-                            anchors.rightMargin: 12
-                            spacing: 8
-
-                            Text {
-                                text: ""
-                                color: Theme.surfaceVariantText
-                                font.family: Theme.iconFontFamily
-                                font.pixelSize: 14
-                            }
-
-                            TextInput {
-                                id: searchInput
-                                Layout.fillWidth: true
-                                text: root.searchText
-                                color: Theme.surfaceText
-                                font.family: Theme.iconFontFamily
-                                font.pixelSize: 13
-                                clip: true
-                                focus: wallpaperWindow.visible
-
-                                onTextChanged: {
-                                    if (root.searchText !== text) root.searchText = text;
-                                }
-
-                                Keys.onEscapePressed: root.open = false
-                                Keys.onPressed: function(event) {
-                                    if (event.key === Qt.Key_Down) {
-                                        event.accepted = true;
-                                        root.selectedIndex = Math.min(root.selectedIndex + 1, root.filteredWallpapers.length - 1);
-                                        wallpapersList.positionViewAtIndex(root.selectedIndex, ListView.Contain);
-                                    } else if (event.key === Qt.Key_Up) {
-                                        event.accepted = true;
-                                        root.selectedIndex = Math.max(root.selectedIndex - 1, 0);
-                                        wallpapersList.positionViewAtIndex(root.selectedIndex, ListView.Contain);
-                                    } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                                        event.accepted = true;
-                                        if (root.selectedIndex >= 0)
-                                            root.apply(root.filteredWallpapers[root.selectedIndex]);
-                                    }
-                                }
-
-                                Text {
-                                    anchors.fill: parent
-                                    text: "Search..."
-                                    color: Theme.surfaceVariantText
-                                    font: parent.font
-                                    verticalAlignment: Text.AlignVCenter
-                                    visible: parent.text === ""
-                                }
-                            }
-                        }
-                    }
-
-                    ListView {
-                        id: wallpapersList
+                    Image {
+                        id: preview
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        model: root.filteredWallpapers
-                        currentIndex: root.selectedIndex
-                        clip: true
-                        spacing: 4
-                        boundsBehavior: Flickable.StopAtBounds
-
-                        delegate: Rectangle {
-                            id: wallpaperDelegate
-                            required property string modelData
-                            required property int index
-
-                            width: wallpapersList.width
-                            height: 38
-                            radius: 8
-                            color: root.selectedIndex === index ? Theme.primary : Theme.transparentColor
-
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 8
-                                anchors.rightMargin: 8
-                                spacing: 10
-
-                                Image {
-                                    id: wallpaperThumb
-                                    Layout.preferredWidth: 24
-                                    Layout.preferredHeight: 24
-                                    source: root.thumbSource(wallpaperDelegate.modelData)
-                                    sourceSize.width: 256
-                                    sourceSize.height: 256
-                                    fillMode: Image.PreserveAspectCrop
-                                    asynchronous: true
-                                    onStatusChanged: {
-                                        if (status === Image.Error)
-                                            source = "file://" + wallpaperDelegate.modelData;
-                                    }
-                                }
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: wallpaperDelegate.modelData.split("/").pop()
-                                    color: root.selectedIndex === wallpaperDelegate.index
-                                        ? Theme.primaryText : Theme.surfaceText
-                                    font.family: Theme.iconFontFamily
-                                    font.pixelSize: 11
-                                    elide: Text.ElideMiddle
-                                }
-
-                                Text {
-                                    text: wallpaperDelegate.index + 1
-                                    color: root.selectedIndex === wallpaperDelegate.index
-                                        ? Theme.primaryText : Theme.surfaceVariantText
-                                    font.family: Theme.iconFontFamily
-                                    font.pixelSize: 10
-                                }
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onEntered: root.selectedIndex = wallpaperDelegate.index
-                                onClicked: root.apply(wallpaperDelegate.modelData)
-                            }
-                        }
-
-                        Text {
+                        source: root.selected ? Theme.fileUrl(root.selected.path) : ""
+                        sourceSize { width: 800; height: 600 }
+                        fillMode: Image.PreserveAspectFit
+                        asynchronous: true
+                        ThemeText {
                             anchors.centerIn: parent
-                            text: "No wallpapers found\nAdd images to ~/Pictures/wallpapers/"
+                            text: scanner.running || preview.status === Image.Loading ? "Loading…"
+                                : preview.status === Image.Error ? "Preview unavailable" : "No wallpapers found"
+                            visible: !root.selected || preview.status === Image.Error || preview.status === Image.Loading
                             color: Theme.surfaceVariantText
-                            font.family: Theme.iconFontFamily
-                            font.pixelSize: 12
-                            horizontalAlignment: Text.AlignHCenter
-                            visible: wallpapersList.count === 0
-                        }
-
-                        Rectangle {
-                            anchors.top: parent.top
-                            anchors.right: parent.right
-                            anchors.bottom: parent.bottom
-                            width: 5
-                            radius: 3
-                            color: Theme.surfaceContainerHigh
-                            visible: wallpapersList.contentHeight > wallpapersList.height
-                        }
-
-                        Rectangle {
-                            anchors.right: parent.right
-                            width: 5
-                            y: wallpapersList.visibleArea.yPosition * wallpapersList.height
-                            height: Math.max(24, wallpapersList.visibleArea.heightRatio * wallpapersList.height)
-                            radius: 3
-                            color: Theme.primary
-                            visible: wallpapersList.contentHeight > wallpapersList.height
+                            font.family: Theme.fontFamily
                         }
                     }
-
-                    RowLayout {
+                    ThemeText {
                         Layout.fillWidth: true
-                        spacing: 14
-
-                        Text {
-                            text: "↑↓ navigate"
-                            color: Theme.surfaceVariantText
-                            font.family: Theme.iconFontFamily
-                            font.pixelSize: 10
-                        }
-                        Text {
-                            text: "⏎ apply"
-                            color: Theme.surfaceVariantText
-                            font.family: Theme.iconFontFamily
-                            font.pixelSize: 10
-                        }
-                        Text {
-                            text: "esc close"
-                            color: Theme.surfaceVariantText
-                            font.family: Theme.iconFontFamily
-                            font.pixelSize: 10
-                        }
-                        Item { Layout.fillWidth: true }
+                        text: root.selected ? root.selected.name : "Add images to " + root.wallpaperDirectory
+                        color: Theme.surfaceText
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 13
+                        wrapMode: Text.Wrap
+                        maximumLineCount: 2
+                        elide: Text.ElideMiddle
+                    }
+                    ThemeText {
+                        Layout.fillWidth: true
+                        text: root.errorMessage || (root.selected && root.selected.current
+                            ? "Current wallpaper" : "Uses your existing Pywal wallpaper pipeline")
+                        color: root.errorMessage ? Theme.error : Theme.surfaceVariantText
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 11
+                        wrapMode: Text.Wrap
+                    }
+                    ThemeButton {
+                        Layout.fillWidth: true
+                        text: setterProcess.running ? "Applying…" : "Apply wallpaper"
+                        pickerStyle: true
+                        baseColor: Theme.primary
+                        enabled: Boolean(root.selected) && !setterProcess.running && !scanner.running
+                        onClicked: root.apply()
                     }
                 }
-            }
-
-            Item {
-                focus: wallpaperWindow.visible
-                Keys.onEscapePressed: root.open = false
-            }
-
-            onVisibleChanged: {
-                if (visible) Qt.callLater(function() { searchInput.forceActiveFocus(); });
             }
         }
     }

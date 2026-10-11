@@ -1,409 +1,196 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
-import Quickshell.Hyprland
 import Quickshell.Io
-import Quickshell.Wayland
 
 Scope {
     id: root
-
-    property bool open: false
-    property string searchText: ""
-    property int selectedIndex: 0
-
-    function isFocused(screen) {
-        const monitor = Hyprland.monitorFor(screen);
-        return !Hyprland.focusedMonitor ||
-            (monitor && monitor.name === Hyprland.focusedMonitor.name);
+    property var lastPointerPosition: null
+    function pointerMoved(position): bool {
+        const previous = lastPointerPosition;
+        lastPointerPosition = position;
+        return previous !== null && (Math.abs(position.x - previous.x) > 0.25
+            || Math.abs(position.y - previous.y) > 0.25);
     }
 
-    function toggle(): void {
-        root.open = !root.open;
-        if (root.open) {
-            root.searchText = "";
-            root.selectedIndex = 0;
+    // Read Rofi history, but keep new launcher usage in Quickshell's own state.
+    FileView {
+        id: drunCache
+        path: (Quickshell.env("HOME") || "") + "/.cache/rofi3.druncache"
+        blockLoading: true
+        printErrors: false
+        watchChanges: true
+        onFileChanged: reload()
+    }
+    FileView {
+        id: usageFile
+        path: Quickshell.statePath("launcher-usage.json")
+        blockLoading: true
+        printErrors: false
+    }
+    property var localUsage: {
+        try { return JSON.parse(usageFile.text() || "{}"); }
+        catch (error) { return {}; }
+    }
+    readonly property var rofiUsage: {
+        const scores = {};
+        for (const line of drunCache.text().split("\n")) {
+            const match = line.trim().match(/^(\d+)\s+(.+)$/);
+            if (match) scores[match[2]] = Number(match[1]);
         }
+        return scores;
+    }
+
+    function usageFor(entry): int {
+        const id = String(entry.id || "");
+        const base = id.endsWith(".desktop") ? id.slice(0, -8) : id;
+        return (root.localUsage[id] || 0) + (root.rofiUsage[id] || root.rofiUsage[base] || root.rofiUsage[base + ".desktop"] || 0);
     }
 
     function launch(entry): void {
         if (!entry) return;
         entry.execute();
-        root.open = false;
+        const scores = Object.assign({}, root.localUsage);
+        scores[entry.id] = (scores[entry.id] || 0) + 1;
+        root.localUsage = scores;
+        usageFile.setText(JSON.stringify(scores));
+        UiState.close("launcher");
+    }
+
+    readonly property var apps: {
+        const terms = picker.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        return [...DesktopEntries.applications.values].filter(entry => {
+            if (entry.noDisplay || !entry.name) return false;
+            const categories = entry.categories || [];
+            if (categories.includes("X-XFCE") || categories.includes("X-Xfce-Toplevel")) return false;
+            const haystack = [entry.name, entry.genericName, entry.execString,
+                ...(entry.keywords || []), ...categories].join(" ").toLowerCase();
+            return terms.every(term => haystack.includes(term));
+        }).sort((a, b) => {
+            const query = picker.query.trim().toLowerCase();
+            const aStarts = query && a.name.toLowerCase().startsWith(query);
+            const bStarts = query && b.name.toLowerCase().startsWith(query);
+            if (aStarts !== bStarts) return aStarts ? -1 : 1;
+            return root.usageFor(b) - root.usageFor(a) || a.name.localeCompare(b.name);
+        });
     }
 
     IpcHandler {
         target: "launcher"
-        function toggle(): void { root.toggle(); }
-    }
-
-    // Reuse Rofi's drun frequency cache so the empty list order matches.
-    FileView {
-        id: drunCache
-        path: (Quickshell.env("HOME") || "") + "/.cache/rofi3.druncache"
-        blockLoading: true
-        watchChanges: true
-        onFileChanged: reload()
-    }
-
-    readonly property var usageScores: {
-        const scores = {};
-        const text = drunCache.text();
-        const lines = text.split("\n");
-        for (let i = 0; i < lines.length; ++i) {
-            const line = lines[i].trim();
-            if (!line) continue;
-            const space = line.indexOf(" ");
-            if (space < 0) continue;
-            const count = Number(line.slice(0, space));
-            const id = line.slice(space + 1).trim();
-            if (id) scores[id] = Number.isFinite(count) ? count : 0;
+        function toggle(): void { UiState.toggle("launcher"); }
+        function open(): void { UiState.show("launcher"); }
+        function close(): void { UiState.close("launcher"); }
+        function search(query: string): void { UiState.show("launcher"); picker.query = query; }
+        function results(): string { return JSON.stringify(root.apps.map(entry => entry.name)); }
+        function status(): string {
+            return JSON.stringify({selected: picker.selectedIndex, query: picker.query,
+                iconSize: Theme.launcherIconSize, selectedName: root.apps[picker.selectedIndex]
+                    ? root.apps[picker.selectedIndex].name : ""});
         }
-        return scores;
+        function activate(): void { root.launch(root.apps[picker.selectedIndex]); }
     }
 
-    function isHiddenDesktop(entry): bool {
-        if (!entry || entry.noDisplay || !entry.name) return true;
-        const cats = entry.categories || [];
-        for (let i = 0; i < cats.length; ++i) {
-            const cat = String(cats[i]);
-            if (cat === "X-XFCE" || cat === "X-Xfce-Toplevel") return true;
-        }
-        return false;
-    }
+    PickerWindow {
+        id: picker
+        route: "launcher"
+        title: "Applications"
+        statusText: itemCount + " apps"
+        actionText: "launch"
+        itemCount: root.apps.length
+        onActivated: root.launch(root.apps[selectedIndex])
 
-    function usageFor(entry): int {
-        const scores = root.usageScores;
-        const id = entry && entry.id ? String(entry.id) : "";
-        if (!id) return 0;
-        const candidates = [id];
-        if (id.endsWith(".desktop"))
-            candidates.push(id.slice(0, -8));
-        else
-            candidates.push(id + ".desktop");
-        const base = id.split("/").pop();
-        if (base && candidates.indexOf(base) < 0) candidates.push(base);
-        for (let i = 0; i < candidates.length; ++i) {
-            const score = scores[candidates[i]];
-            if (score != null) return score;
-        }
-        return 0;
-    }
+        ListView {
+            id: results
+            anchors.fill: parent
+            model: ScriptModel { values: root.apps; objectProp: "id" }
+            currentIndex: picker.selectedIndex
+            onCurrentIndexChanged: if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain)
+            clip: true
+            spacing: 4
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ThemeScrollBar {}
 
-    ScriptModel {
-        id: filteredApps
-        objectProp: "id"
-        values: {
-            const query = root.searchText.trim().toLowerCase();
-            const apps = [...DesktopEntries.applications.values];
+            delegate: Rectangle {
+                id: appRow
+                required property var modelData
+                required property int index
+                readonly property bool selected: picker.selectedIndex === index
+                readonly property string icon: modelData.icon ? Quickshell.iconPath(modelData.icon, true) : ""
+                width: results.width - 10
+                height: 48
+                radius: 8
+                color: selected ? Theme.pickerSelectedBackground : Theme.transparentColor
 
-            return apps.filter(function(entry) {
-                if (root.isHiddenDesktop(entry)) return false;
-                if (query === "") return true;
-                const values = [
-                    entry.name || "",
-                    entry.genericName || "",
-                    entry.execString || "",
-                    ...(entry.keywords || []),
-                    ...(entry.categories || [])
-                ];
-                return values.some(function(value) {
-                    return String(value).toLowerCase().includes(query);
-                });
-            }).sort(function(a, b) {
-                const an = (a.name || "").toLowerCase();
-                const bn = (b.name || "").toLowerCase();
-                const ascore = root.usageFor(a);
-                const bscore = root.usageFor(b);
-                if (query !== "") {
-                    const aStarts = an.startsWith(query);
-                    const bStarts = bn.startsWith(query);
-                    if (aStarts && !bStarts) return -1;
-                    if (!aStarts && bStarts) return 1;
-                }
-                if (ascore !== bscore) return bscore - ascore;
-                return an.localeCompare(bn);
-            });
-        }
-    }
-
-    onSearchTextChanged: {
-        if (filteredApps.values.length === 0) root.selectedIndex = -1;
-        else root.selectedIndex = 0;
-    }
-
-    Variants {
-        model: Quickshell.screens
-
-        PanelWindow {
-            id: launcherWindow
-            required property var modelData
-
-            screen: modelData
-            visible: root.open && root.isFocused(modelData)
-            focusable: true
-            color: Theme.transparentColor
-            exclusionMode: ExclusionMode.Ignore
-
-            WlrLayershell.layer: WlrLayer.Overlay
-            WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
-            WlrLayershell.namespace: "quickshell-dev-launcher"
-
-            anchors {
-                top: true
-                bottom: true
-                left: true
-                right: true
-            }
-
-            Rectangle {
-                anchors.fill: parent
-                color: Theme.scrim
-
-                MouseArea {
+                RowLayout {
                     anchors.fill: parent
-                    onClicked: root.open = false
-                }
-            }
-
-            Rectangle {
-                id: launcherBox
-                anchors.centerIn: parent
-                width: 600
-                height: 430
-                radius: 10
-                color: Theme.background
-                border.color: Theme.outlineVariant
-                border.width: 1
-                z: 2
-
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: function(mouse) { mouse.accepted = true; }
-                }
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 30
+                    anchors.margins: 8
                     spacing: 10
-
-                    Text {
-                        text: "  Applications"
-                        color: Theme.surfaceText
-                        font.family: Theme.iconFontFamily
-                        font.bold: true
-                        font.pixelSize: 14
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        height: 40
-                        radius: 8
-                        color: Theme.transparentColor
-                        border.color: searchInput.activeFocus ? Theme.primary : Theme.outlineVariant
-                        border.width: 1
-
-                        RowLayout {
+                    Item {
+                        Layout.preferredWidth: Theme.launcherIconSize
+                        Layout.preferredHeight: Theme.launcherIconSize
+                        Image {
+                            id: appImage
                             anchors.fill: parent
-                            anchors.leftMargin: 12
-                            anchors.rightMargin: 12
-                            spacing: 8
-
-                            Text {
-                                text: ""
-                                color: Theme.surfaceVariantText
-                                font.family: Theme.iconFontFamily
-                                font.pixelSize: 14
-                            }
-
-                            TextInput {
-                                id: searchInput
-                                Layout.fillWidth: true
-                                Layout.alignment: Qt.AlignVCenter
-                                text: root.searchText
-                                color: Theme.surfaceText
-                                font.family: Theme.iconFontFamily
-                                font.pixelSize: 14
-                                clip: true
-                                focus: launcherWindow.visible
-                                selectByMouse: true
-
-                                onTextChanged: {
-                                    if (root.searchText !== text) root.searchText = text;
-                                }
-
-                                Keys.onEscapePressed: root.open = false
-                                Keys.onPressed: function(event) {
-                                    if (event.key === Qt.Key_Down) {
-                                        event.accepted = true;
-                                        root.selectedIndex = Math.min(root.selectedIndex + 1, filteredApps.values.length - 1);
-                                        results.positionViewAtIndex(root.selectedIndex, ListView.Contain);
-                                    } else if (event.key === Qt.Key_Up) {
-                                        event.accepted = true;
-                                        root.selectedIndex = Math.max(root.selectedIndex - 1, 0);
-                                        results.positionViewAtIndex(root.selectedIndex, ListView.Contain);
-                                    } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                                        event.accepted = true;
-                                        if (root.selectedIndex >= 0)
-                                            root.launch(filteredApps.values[root.selectedIndex]);
-                                    }
-                                }
-
-                                Text {
-                                    anchors.fill: parent
-                                    text: "Search..."
-                                    color: Theme.surfaceVariantText
-                                    font: parent.font
-                                    verticalAlignment: Text.AlignVCenter
-                                    visible: parent.text === ""
-                                }
-                            }
+                            source: appRow.icon
+                            sourceSize { width: Theme.launcherIconSize; height: Theme.launcherIconSize }
+                            fillMode: Image.PreserveAspectFit
                         }
-                    }
-
-                    Text {
-                        text: results.count + " application" + (results.count === 1 ? "" : "s")
-                        color: Theme.surfaceVariantText
-                        font.family: Theme.iconFontFamily
-                        font.pixelSize: 10
-                    }
-
-                    ListView {
-                        id: results
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        model: filteredApps
-                        currentIndex: root.selectedIndex
-                        clip: true
-                        spacing: 3
-                        boundsBehavior: Flickable.StopAtBounds
-
-                        delegate: Rectangle {
-                            id: appDelegate
-                            required property var modelData
-                            required property int index
-
-                            width: results.width
-                            height: 38
-                            radius: 8
-                            color: root.selectedIndex === index ? Theme.primary : Theme.transparentColor
-
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 10
-                                anchors.rightMargin: 10
-                                spacing: 12
-
-                                Item {
-                                    Layout.preferredWidth: 24
-                                    Layout.preferredHeight: 24
-
-                                    Image {
-                                        anchors.fill: parent
-                                        source: appDelegate.modelData.icon
-                                            ? Quickshell.iconPath(appDelegate.modelData.icon, true) : ""
-                                        sourceSize.width: 24
-                                        sourceSize.height: 24
-                                        fillMode: Image.PreserveAspectFit
-                                        visible: source !== ""
-                                    }
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "󰀻"
-                                        color: root.selectedIndex === appDelegate.index
-                                            ? Theme.primaryText : Theme.primary
-                                        font.family: Theme.iconFontFamily
-                                        font.pixelSize: 18
-                                        visible: appDelegate.modelData.icon === ""
-                                    }
-                                }
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: appDelegate.modelData.name || ""
-                                    color: root.selectedIndex === appDelegate.index
-                                        ? Theme.primaryText : Theme.surfaceText
-                                    font.family: Theme.iconFontFamily
-                                    font.pixelSize: 12
-                                    font.bold: root.selectedIndex === appDelegate.index
-                                    elide: Text.ElideRight
-                                }
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onEntered: root.selectedIndex = appDelegate.index
-                                onClicked: root.launch(appDelegate.modelData)
-                            }
-                        }
-
-                        Text {
+                        GlyphIcon {
                             anchors.centerIn: parent
-                            text: "No applications found"
-                            color: Theme.surfaceVariantText
+                            size: Theme.launcherIconSize
+                            glyph: "󰀻"
                             font.family: Theme.iconFontFamily
-                            font.pixelSize: 13
-                            visible: results.count === 0
-                        }
-
-                        Rectangle {
-                            anchors.top: parent.top
-                            anchors.right: parent.right
-                            anchors.bottom: parent.bottom
-                            width: 5
-                            radius: 3
-                            color: Theme.surfaceContainerHigh
-                            visible: results.contentHeight > results.height
-                        }
-
-                        Rectangle {
-                            anchors.right: parent.right
-                            width: 5
-                            y: results.visibleArea.yPosition * results.height
-                            height: Math.max(24, results.visibleArea.heightRatio * results.height)
-                            radius: 3
-                            color: Theme.primary
-                            visible: results.contentHeight > results.height
+                            color: appRow.selected ? Theme.primaryText : Theme.primary
+                            visible: appImage.status !== Image.Ready
                         }
                     }
-
-                    RowLayout {
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        spacing: 14
-
-                        Text {
-                            text: "↑↓ navigate"
-                            color: Theme.surfaceVariantText
-                            font.family: Theme.iconFontFamily
-                            font.pixelSize: 10
+                        spacing: 2
+                        ThemeText {
+                            Layout.fillWidth: true
+                            text: appRow.modelData.name
+                            color: appRow.selected ? Theme.pickerSelectedText : Theme.surfaceText
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 14
+                            font.bold: true
+                            elide: Text.ElideRight
                         }
-                        Text {
-                            text: "⏎ launch"
-                            color: Theme.surfaceVariantText
-                            font.family: Theme.iconFontFamily
+                        ThemeText {
+                            Layout.fillWidth: true
+                            text: appRow.modelData.genericName || ""
+                            visible: text !== "" && text !== appRow.modelData.name
+                            color: appRow.selected ? Theme.pickerSelectedText : Theme.surfaceVariantText
+                            font.family: Theme.fontFamily
                             font.pixelSize: 10
+                            elide: Text.ElideRight
                         }
-                        Text {
-                            text: "esc close"
-                            color: Theme.surfaceVariantText
-                            font.family: Theme.iconFontFamily
-                            font.pixelSize: 10
-                        }
-                        Item { Layout.fillWidth: true }
                     }
+                }
+                MouseArea {
+                    id: mouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    // A pop-in changes local pointer coordinates without any real
+                    // movement. Do not let that shift selection during entry.
+                    onPositionChanged: mouse => {
+                        const moved = root.pointerMoved(appRow.mapToItem(picker.contentItem, mouse.x, mouse.y));
+                        if (moved && containsMouse && picker.surfaceScale === 1
+                            && picker.surfaceOpacity === 1) picker.select(appRow.index);
+                    }
+                    onClicked: root.launch(appRow.modelData)
                 }
             }
 
-            Item {
-                focus: launcherWindow.visible
-                Keys.onEscapePressed: root.open = false
-            }
-
-            onVisibleChanged: {
-                if (visible) Qt.callLater(function() { searchInput.forceActiveFocus(); });
+            ThemeText {
+                anchors.centerIn: parent
+                text: "No applications match your search"
+                color: Theme.surfaceVariantText
+                font.family: Theme.fontFamily
+                font.pixelSize: 13
+                visible: results.count === 0
             }
         }
     }
