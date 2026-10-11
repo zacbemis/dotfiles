@@ -1,4 +1,24 @@
 onboarding = false
+
+# Inherit Kitty's wallpaper-generated ANSI palette (Pywal or Matugen).
+[theme]
+name = "terminal"
+auto_switch = false
+
+[theme.custom]
+# Normal terminal background, with the darker explorer shade for selections.
+# Keep panel_bg and surface_dim reset so active tab labels inherit readable text.
+# BEGIN managed wallpaper surfaces
+panel_bg = "reset"
+sidebar_bg = "reset"
+surface0 = "reset"
+surface_dim = "reset"
+active_row_bg = "#10180a"
+selection_bg = "#10180a"
+accent = "#10180a"
+# END managed wallpaper surfaces
+# Herdr also uses accent for other UI highlights.
+
 # Herdr keybindings
 [keys]
 previous_tab = "alt+h"

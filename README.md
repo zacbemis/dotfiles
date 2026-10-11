@@ -13,7 +13,7 @@ Dynamic colorschemes via [pywal](https://github.com/eendroroy/pywal16) and [matu
 | **rofi** | App launcher + wallpaper picker with thumbnail previews |
 | **swaync** | Notification center with Material Design theming, update checker widget |
 | **kitty** | Terminal emulator config |
-| **herdr** | Terminal workspace manager and keybindings |
+| **herdr** | Terminal workspace manager and keybindings, inheriting wallpaper colors from Kitty |
 | **nvim** | Standalone Neovim setup with LSP, Treesitter, Git tools, and live wallpaper-derived colors |
 | **wal** | Pywal templates for all apps + post-hook script that symlinks generated colors everywhere |
 | **matugen** | Material You color generation templates and reload hooks |
@@ -33,6 +33,17 @@ Two color systems are set up — use whichever you prefer:
 - **matugen** (`matugen image <image>`) generates Material You colors and writes them directly to each app's color file
 
 The wallpaper scripts at `~/.config/hypr/scripts/` handle everything: set wallpaper via awww, generate colors, reload apps.
+
+Herdr uses its built-in `terminal` theme to inherit Kitty's ANSI palette, so both
+Pywal and Matugen work without a separate Herdr color template. Its bars, inactive
+tabs, and sidebar inherit the normal terminal background. Selected tabs and
+sidebar rows use Neovim's darker explorer shade (Kitty background darkened by 16%).
+`panel_bg` and `surface_dim` stay `reset` so selected tab labels inherit the host
+foreground. Active tabs share Herdr's global accent token, so other UI accents
+also use that darker shade.
+After Kitty reloads, `~/.config/herdr/reload-colors.sh` runs `sync-colors.py` to
+update only the managed theme tokens, reloads Herdr's config, and signals
+attached clients to refresh their palette. Running panes are not restarted.
 
 Neovim uses the newest valid Pywal or Matugen palette for live background colors,
 while a local, VS Code–inspired scheme keeps syntax colors consistent (no theme plugin).

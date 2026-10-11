@@ -31,6 +31,9 @@ hyprctl reload >/dev/null 2>&1 || true
 
 pkill -SIGUSR2 waybar 2>/dev/null || true
 pkill -USR1 -x kitty 2>/dev/null || true
+if [[ -x "$HOME/.config/herdr/reload-colors.sh" ]]; then
+    "$HOME/.config/herdr/reload-colors.sh" || true
+fi
 swaync-client -R  >/dev/null 2>&1 || true
 swaync-client -rs >/dev/null 2>&1 || true
 gsettings set org.gnome.desktop.interface gtk-theme "" 2>/dev/null || true

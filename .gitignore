@@ -21,6 +21,10 @@
 .pi/agent/sessions/
 .pi/agent/*.backup.*
 
+# Python runtime/test bytecode
+__pycache__/
+*.py[cod]
+
 # OS / editor junk
 .DS_Store
 *.swp
