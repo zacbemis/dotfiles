@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import resource
 import shutil
 import subprocess
 import tempfile
@@ -133,6 +134,17 @@ fi
                                 env=self.env, capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    @unittest.skipUnless(shutil.which("hyprlock"), "Hyprlock is not installed")
+    def test_hyprlock_parses_without_connecting_to_live_display(self):
+        (self.config / "hypr/colors/colors.conf").write_text(PALETTE)
+        result = subprocess.run(["hyprlock", "--config", str(REPO / ".config/hypr/hyprlock.conf"),
+                                 "--display", self.tmp.name + "/missing-display"],
+                                env=self.env, capture_output=True, text=True, timeout=10,
+                                preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)))
+        output = result.stdout + result.stderr
+        self.assertNotIn("Config error", output)
+        self.assertNotIn("Config has errors", output)
+        self.assertIn("Couldn't connect to a wayland compositor", output)
 
 
 if __name__ == "__main__":

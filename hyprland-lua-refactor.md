@@ -65,7 +65,8 @@ Hyprland --verify-config --config <candidate>/hyprland.lua
 - The color bridge supplies fallback border colors when the generated palette is absent, incomplete, or malformed. A fresh installation or deleted cache no longer prevents Lua configuration loading.
 - Pywal16's post-hook and Matugen's `reload-hyprland.sh` record the last generator in `${XDG_STATE_HOME:-$HOME/.local/state}/hypr/color-generator` before reloading Hyprland.
 - Both autostart variants call `restore-colors.sh`. Matugen's existing output is preserved rather than overwritten with Pywal's cache; missing output is regenerated from `current_wallpaper`. Pywal restores its cache or regenerates it if deleted. Installations without a generator marker retain the previous Pywal default.
-- Regression tests: `python3 tests/test_hyprland.py -v`. Tests use isolated homes and mock application reloads.
+- Hyprlock uses `dots_rounding`, fully comments out the disabled weather/user labels, and removes the obsolete config-level `grace` setting. Locking remains immediate by default; grace is now an explicit CLI option.
+- Regression tests: `python3 tests/test_hyprland.py -v`. Tests use isolated homes and mock application reloads; Hyprlock parsing is checked against a nonexistent display with core dumps disabled, never the live session.
 
 ## Rollback
 
