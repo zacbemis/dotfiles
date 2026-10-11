@@ -8,25 +8,31 @@ if not config_home or config_home == "" then
     config_home = home .. "/.config"
 end
 local path = config_home .. "/hypr/colors/colors.conf"
-local file, err = io.open(path, "r")
-
-if not file then
-    error("unable to read " .. path .. ": " .. tostring(err))
-end
-
+local file = io.open(path, "r")
 local colors = {}
 
-for line in file:lines() do
-    local name, value = line:match("^%$([%w_]+)%s*=%s*(.-)%s*$")
-    if name and value then
-        colors[name] = value
+if file then
+    for line in file:lines() do
+        local name, value = line:match("^%$([%w_]+)%s*=%s*(.-)%s*$")
+        if name and value then
+            colors[name] = value
+        end
     end
+    file:close()
 end
 
-file:close()
-
-if not colors.primary or not colors.secondary then
-    error("colors.conf did not provide primary and secondary")
+-- Generated files may not exist on first login or after cache cleanup.
+-- Keep the compositor usable until the wallpaper pipeline regenerates them.
+local defaults = {
+    primary = "rgba(89b4faff)",
+    secondary = "rgba(cba6f7ff)",
+}
+for name, fallback in pairs(defaults) do
+    local value = colors[name]
+    if not value or not (value:match("^rgba%(%x%x%x%x%x%x%x%x%)$")
+        or value:match("^rgb%(%x%x%x%x%x%x%)$")) then
+        colors[name] = fallback
+    end
 end
 
 return colors

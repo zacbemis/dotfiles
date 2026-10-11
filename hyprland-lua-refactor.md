@@ -53,11 +53,19 @@ Hyprland --verify-config --config <candidate>/hyprland.lua
 
 ## Implementation status
 
-- Added and deployed `hyprland.lua`, seven Lua modules, and `colors/colors.lua`.
-- `colors/colors.lua` reads the existing generated `colors.conf`, so Pywal, Matugen, and hyprlock remain unchanged.
+- Added and deployed `hyprland.lua`, seven Lua modules, and `hyprmodules/colors.lua`.
+- `hyprmodules/colors.lua` reads the existing generated `colors.conf`, retaining compatibility with Pywal, Matugen, and hyprlock.
+- Unlike legacy `source`, Lua's `io.open()` does not register `colors.conf` for automatic reloads. Pywal's `wal-post.sh` explicitly runs `hyprctl reload` after linking the generated palette; Matugen's Hyprland template does the same in its `post_hook` after writing it. A manual reload was verified to replace stale border colors with the current palette.
 - The running compositor was reloaded successfully. `Hyprland --verify-config` passed; `luac -p` passed; 58 bindings and the active-border gradient were observed through `hyprctl`.
 - `hyprland.start` is a startup event, so it does not rerun on `hyprctl reload`; Waybar must already be running or be started manually after a reload.
-- All legacy `.conf` files remain unchanged. The repository still contains unrelated dirty-tree changes; do not mix them into this migration.
+- The initial migration left legacy `.conf` files unchanged. The follow-up fixes below also update legacy autostart so rollback uses the same color restoration logic. The repository still contains unrelated dirty-tree changes; do not mix them into this migration.
+
+## Follow-up fixes
+
+- The color bridge supplies fallback border colors when the generated palette is absent, incomplete, or malformed. A fresh installation or deleted cache no longer prevents Lua configuration loading.
+- Pywal16's post-hook and Matugen's `reload-hyprland.sh` record the last generator in `${XDG_STATE_HOME:-$HOME/.local/state}/hypr/color-generator` before reloading Hyprland.
+- Both autostart variants call `restore-colors.sh`. Matugen's existing output is preserved rather than overwritten with Pywal's cache; missing output is regenerated from `current_wallpaper`. Pywal restores its cache or regenerates it if deleted. Installations without a generator marker retain the previous Pywal default.
+- Regression tests: `python3 tests/test_hyprland.py -v`. Tests use isolated homes and mock application reloads.
 
 ## Rollback
 

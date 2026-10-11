@@ -20,6 +20,15 @@ ln -sf "$CACHE/colors-nvim-custom.lua"      "$HOME/.config/nvim/lua/colors/wal-c
 ln -sf "$CACHE/colors-gtk-custom.css"       "$HOME/.config/gtk-3.0/colors.css"
 ln -sf "$CACHE/colors-gtk-custom.css"       "$HOME/.config/gtk-4.0/colors.css"
 
+# Remember the generator only after its palette has been installed.
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/hypr"
+mkdir -p "$STATE"
+printf '%s\n' pywal > "$STATE/color-generator"
+
+# Lua reads colors.conf via io.open(), which does not register a config watch.
+# Reload only after the generated palette is linked into place.
+hyprctl reload >/dev/null 2>&1 || true
+
 pkill -SIGUSR2 waybar 2>/dev/null || true
 pkill -USR1 -x kitty 2>/dev/null || true
 swaync-client -R  >/dev/null 2>&1 || true
