@@ -21,6 +21,7 @@ accent = "#10180a"
 
 # Herdr keybindings
 [keys]
+toggle_sidebar = "alt+b"
 previous_tab = "alt+h"
 next_tab = "alt+l"
 new_tab = "alt+n"
