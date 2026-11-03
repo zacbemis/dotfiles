@@ -37,26 +37,18 @@ class QuickshellOnly(unittest.TestCase):
             with self.subTest(path=str(path.relative_to(ROOT))):
                 self.assertNotRegex(path.read_text(), r"(?i)\b(?:waybar|rofi|swaync|INSTALL_LEGACY_UI)\b")
 
-    def test_hyprland_starts_quickshell_in_both_config_formats(self):
-        modules = ROOT / ".config/hypr/hyprmodules"
-        for suffix, statement in (("conf", "exec-once = ~/.config/quickshell/desktop.sh start"),
-                                  ("lua", 'hl.exec_cmd("~/.config/quickshell/desktop.sh start")')):
-            with self.subTest(format=suffix):
-                source = (modules / f"autostart.{suffix}").read_text()
-                self.assertIn(statement, source)
-                self.assertEqual(source.count("desktop.sh start"), 1)
+    def test_hyprland_starts_quickshell_from_lua(self):
+        source = (ROOT / ".config/hypr/hyprmodules/autostart.lua").read_text()
+        self.assertIn('hl.exec_cmd("~/.config/quickshell/desktop.sh start")', source)
+        self.assertEqual(source.count("desktop.sh start"), 1)
 
     def test_desktop_keybindings_route_to_quickshell(self):
         modules = ROOT / ".config/hypr/hyprmodules"
-        conf = (modules / "keybindings.conf").read_text()
         lua = (modules / "keybindings.lua").read_text()
-        self.assertIn("$menu = ~/.config/quickshell/desktop.sh launcher", conf)
-        self.assertIn("bind = $mainMod, D, exec, $menu", conf)
         self.assertIn('local menu = "~/.config/quickshell/desktop.sh launcher"', lua)
         self.assertIn('hl.bind(mainMod .. " + D", hl.dsp.exec_cmd(menu))', lua)
         for key, action in (("R", "restart"), ("W", "wallpaper"), ("comma", "settings")):
             with self.subTest(key=key):
-                self.assertIn(f"bind = $mainMod, {key}, exec, ~/.config/quickshell/desktop.sh {action}", conf)
                 self.assertIn(f'hl.bind(mainMod .. " + {key}", hl.dsp.exec_cmd("~/.config/quickshell/desktop.sh {action}"))', lua)
 
     def test_installer_requires_quickshell_and_native_support_tools(self):
@@ -81,6 +73,12 @@ class QuickshellOnly(unittest.TestCase):
             for source in (ROOT / ".config/wal/templates").iterdir():
                 (cache / source.name).write_text("fixture palette")
             (home / ".config/kitty").mkdir(parents=True)
+            # An upgrade must replace the previous palette link, not depend on it.
+            old_palette = cache / "colors-waybar-custom.css"
+            old_palette.write_text("obsolete palette")
+            palette = home / ".config/quickshell/colors.css"
+            palette.parent.mkdir(parents=True)
+            palette.symlink_to(old_palette)
             binaries = home / "bin"
             binaries.mkdir()
             log = home / "calls"

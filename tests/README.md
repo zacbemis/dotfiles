@@ -20,8 +20,11 @@ python3 -m unittest discover -s tests -v
 - Other `test_quickshell*.py`: real headless QML services, preferences, all supported
   Quickshell renderers, notifications-disabled behavior, connectivity fixtures,
   typography, contrast, input and layout. Optional tools are skipped when absent.
-- Other `test_*.py`: the still-used compositor, idle brightness, fonts, terminal
-  colors and editor configuration.
+- `test_hyprland.py`: Lua-only compositor loading, used/unique animation curves,
+  input/environment cleanup, generated palette recovery and safe lockscreen parsing.
+- `test_stow.py`: temporary-home deployment excludes bytecode, tests and maintenance
+  scripts, while keeping source configs and skills. Also guards removed artifacts.
+- Other `test_*.py`: idle brightness, fonts, terminal colors and editor configuration.
 
 ## Desktop smoke tests
 

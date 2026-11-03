@@ -4,4 +4,7 @@ LICENSE
 README\.md
 install\.sh
 ^/tests
+^/scripts
+__pycache__
+.*\.py[cod]
 \.stow-local-ignore

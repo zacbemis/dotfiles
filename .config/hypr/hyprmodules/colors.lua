@@ -1,6 +1,6 @@
 -- Compatibility bridge for the existing Pywal/Matugen colors.conf.
 -- Lives in hyprmodules so it is tracked; ~/.config/hypr/colors/ is generated-only.
--- The generated colors.conf remains the source of truth for hyprlock and rollback.
+-- The generated colors.conf is shared by this Lua bridge and Hyprlock.
 
 local home = assert(os.getenv("HOME"), "HOME is not set")
 local config_home = os.getenv("XDG_CONFIG_HOME")

@@ -1,5 +1,4 @@
--- Hyprland Lua configuration (0.55+).
--- Keep hyprland.conf and its modules as the legacy rollback configuration.
+-- Hyprland Lua configuration (0.55+), the sole compositor entrypoint.
 
 require("hyprmodules.colors")
 require("hyprmodules.monitors")

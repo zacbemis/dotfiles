@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import resource
+import re
 import shutil
 import subprocess
 import tempfile
@@ -108,6 +109,33 @@ fi
                     self.assertEqual(self.calls()[0], "hyprctl reload")
         config = tomllib.loads((REPO / ".config/matugen/config.toml").read_text())
         self.assertEqual(config["templates"]["hyprland"]["post_hook"], "~/.config/matugen/hooks/reload-hyprland.sh")
+
+    def test_lua_is_the_only_compositor_entrypoint(self):
+        config = REPO / ".config/hypr"
+        self.assertTrue((config / "hyprland.lua").is_file())
+        self.assertFalse((config / "hyprland.conf").exists())
+        self.assertEqual(list((config / "hyprmodules").glob("*.conf")), [])
+        self.assertTrue((config / "hyprlock.conf").is_file())
+        self.assertTrue((config / "hypridle.conf").is_file())
+        modules = re.findall(r'require\("hyprmodules\.([^"\n]+)"\)', (config / "hyprland.lua").read_text())
+        self.assertEqual(set(modules), {path.stem for path in (config / "hyprmodules").glob("*.lua")})
+
+    def test_only_unique_used_animation_curves_are_defined(self):
+        source = (REPO / ".config/hypr/hyprmodules/lookandfeel.lua").read_text()
+        curves = re.findall(r'hl\.curve\("([^"\n]+)"', source)
+        selected = set(re.findall(r'bezier = "([^"\n]+)"', source))
+        self.assertEqual(len(curves), len(set(curves)), "Duplicate curves shadow earlier definitions")
+        self.assertEqual(set(curves), selected, "Every custom curve must be selected by an animation")
+        self.assertEqual(selected, {"wind", "winIn", "liner", "md3_decel", "menu_decel", "easeOutCirc"})
+
+    def test_obsolete_renderer_flags_and_placeholder_device_are_absent(self):
+        modules = REPO / ".config/hypr/hyprmodules"
+        environment = (modules / "enviromentvars.lua").read_text()
+        self.assertNotRegex(environment, r"WLR_RENDERER|WLR_DRM_NO_ATOMIC")
+        self.assertIn('hl.env("LIBVA_DRIVER_NAME", "iHD")', environment)
+        inputs = (modules / "input.lua").read_text()
+        self.assertNotIn("epic-mouse-v1", inputs)
+        self.assertIn('kb_options = "caps:escape"', inputs)
 
     @unittest.skipUnless(shutil.which("lua"), "Lua is not installed")
     def test_palette_fallback_and_valid_colors(self):

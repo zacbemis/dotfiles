@@ -29,7 +29,7 @@ Quickshell is the only configured desktop UI.
 | Rofi filebrowser | Directory navigation, folders-first/name sorting, opening files | Files tab / absolute or `~/` query; parent row; exact-path `xdg-open`, Unicode/newline/metacharacter fixture test |
 | Rofi modes/navigation | App/Run/Files/Wallpaper switching, keyboard selection/cycling | Mode buttons, Ctrl+Tab / Ctrl+Shift+Tab / Shift+Left/Right; wrapping launcher selection |
 | Rofi wallpaper scripts | Image discovery, thumbnails, select/apply | Shared JSON-safe scanner + list/gallery/carousel; exact-path existing setter; selection never applies; wheel/touchpad regression |
-| Hyprland autostart/bindings | Start UI; Super+D apps, Super+W wallpapers, Super+R reload | `desktop.sh start/launcher/wallpaper/restart`, both Lua and legacy .conf variants |
+| Hyprland autostart/bindings | Start UI; Super+D apps, Super+W wallpapers, Super+R reload | `desktop.sh start/launcher/wallpaper/restart` in the Lua autostart/keybinding modules |
 | Multimedia, lock, screenshots, desktop apps | wpctl, mic mute, brightnessctl, playerctl, Hyprlock/idle, screenshots, Thunar/browser, wallpaper daemon | Commands intentionally unchanged; observed by native shell services, not reimplemented as competing daemons |
 | Pywal/Matugen | Wallpaper-derived desktop colors and app reloads | Same generators/setter; canonical `quickshell/colors.css`; watched read-only without UI reload hooks |
 

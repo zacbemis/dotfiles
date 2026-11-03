@@ -7,7 +7,7 @@ historical workflow mapping and deliberate differences.
 
 ## Startup and controls
 
-Both Hyprland config variants call `~/.config/quickshell/desktop.sh start`.
+Hyprland's Lua autostart module calls `~/.config/quickshell/desktop.sh start`.
 Super+D opens Apps/Run/Files, Super+W opens wallpapers, Super+R restarts
 Quickshell, and Super+comma opens Settings. The [shared panel row](NAVIGATION.md)
 supports Alt+H/L across Apps/Run/Files/Wallpapers/Settings. Notifications and quick

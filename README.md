@@ -97,6 +97,9 @@ cd ~/dotfiles
 stow --no-folding .
 ```
 
+Tests, repository maintenance scripts and Python bytecode are excluded by
+`.stow-local-ignore`; source config scripts and intentional skills are still linked.
+
 To unlink:
 
 ```bash
@@ -117,7 +120,7 @@ These are created at runtime by pywal/matugen and intentionally excluded:
 
 ## Notes
 
-- **Monitor config** is in `hypr/hyprmodules/monitors.lua` — you will likely need to change this for your display. Legacy `hyprland.conf` / `monitors.conf` remain as rollback.
+- **Hyprland uses Lua only**: `~/.config/hypr/hyprland.lua` loads the modules in `hypr/hyprmodules/`. Edit `monitors.lua` for your display. Hyprlock/Hypridle and the generated color palette still use their own `.conf` files.
 - **.oh-my-zsh** is not tracked — it's a git repo managed by `omz update`
 - **Pi auth, model cache, and sessions** are not tracked — settings, package declarations, multi-subscription routing, and web-search provider config are tracked
 - **Fonts used**: regular Ubuntu Sans for GTK;
