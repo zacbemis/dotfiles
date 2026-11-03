@@ -24,6 +24,8 @@ python3 -m unittest discover -s tests -v
   input/environment cleanup, generated palette recovery and safe lockscreen parsing.
 - `test_stow.py`: temporary-home deployment excludes bytecode, tests and maintenance
   scripts, while keeping source configs and skills. Also guards removed artifacts.
+- `test_tool_settings.py`: tracked tool config parsing, private-state ignore rules,
+  filtered preference capture/restore, credential guards and scoped file linking.
 - Other `test_*.py`: idle brightness, fonts, terminal colors and editor configuration.
 
 ## Desktop smoke tests

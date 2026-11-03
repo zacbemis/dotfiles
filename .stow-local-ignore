@@ -5,6 +5,7 @@ README\.md
 install\.sh
 ^/tests
 ^/scripts
+^/tool-settings
 __pycache__
 .*\.py[cod]
 \.stow-local-ignore

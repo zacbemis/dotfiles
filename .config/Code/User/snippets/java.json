@@ -1,0 +1,520 @@
+// Place your snippets for java here. Each snippet is defined under a snippet name and has a prefix, body and
+// description. The prefix is what is used to trigger the snippet and the body will be expanded and inserted. Possible variables are:
+// $1, $2 for tab stops, $0 for the final cursor position, and ${1:label}, ${2:another} for placeholders. Placeholders with the
+// same ids are connected.
+// Example:
+// "Print to console": {
+// 	"prefix": "log",
+// 	"body": [
+// 		"console.log('$1');",
+// 		"$2"
+// 	],
+// 	"description": "Log output to console"
+// }
+//
+// You can also restrict snippets to specific files using include/exclude patterns:
+// "Test snippet": {
+// 	"prefix": "test",
+// 	"body": "test('$1', () => {\n\t$0\n});",
+// 	"include": ["**/*.test.ts", "*.spec.ts"],
+// 	"exclude": ["**/temp/*.ts"],
+// 	"description": "Insert test block"
+// }
+{
+  "NetBeans: loadids": {
+    "prefix": "loadids",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"Load ${1:desc} Ids - load${2:loadMethodDesc}Ids(String recIds)\">",
+      "  public final ${3:ent2}Collection load${2:loadMethodDesc}Ids(List<Integer> recIds) {",
+      "    if ((recIds == null) || recIds.isEmpty()) {",
+      "      for (${3:ent2} rec : this) {",
+      "        rec.setDisabled(1);",
+      "      }",
+      "    }",
+      "    else {",
+      "      for (${3:ent2} rec : this) {",
+      "        if (!recIds.contains(rec.get${4:idMethod}())) {",
+      "          rec.setDisabled(1);",
+      "        }",
+      "        else {",
+      "          recIds.remove(rec.get${4:idMethod}());",
+      "        }",
+      "      }",
+      "      ",
+      "      for (Integer recId : recIds) {",
+      "        if (recId == null) {",
+      "          continue;",
+      "        }",
+      "        this.add(new ${3:ent2}().set${4:idMethod}(recId));",
+      "      }",
+      "    }",
+      "    return this;",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: loadids"
+  },
+  "NetBeans: returnm": {
+    "prefix": "returnm",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"${1:desc} - ${2:method}(${3:params})\">",
+      "  public final ${4:ret} ${2:method}(${3:params}) {",
+      "    ${4:ret} result = null;",
+      "    ",
+      "    return result;",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: returnm"
+  },
+  "NetBeans: staticms": {
+    "prefix": "staticms",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"Static Find/Validations\">",
+      "  public final static ${1:retval} Find(${2:idtype} recId) {",
+      "    ${1:retval} result = new ${1:retval};",
+      "    result.set${3:idprop}(ConditionFilter.ConditionOperator.SQL_EQUAL, recId).select();",
+      "    if (recId != null) {",
+      "      result = new ${1:retval}();",
+      "      result.set${3:idprop}(ConditionFilter.ConditionOperator.SQL_EQUAL, recId).select();",
+      "      if (!result.recordFound() || result.isDisabled()) {",
+      "        result = null;",
+      "      }",
+      "    }",
+      "    return result;",
+      "  }",
+      "  ",
+      "  public final static ${1:retval} Validate(String recId) {",
+      "    ${1:retval} result = null;",
+      "    if ((result = Find(recId)) == null) {",
+      "      throw new NullPointerException(\"The record id \" + recId + \" is invalid.\");",
+      "    }",
+      "    ",
+      "    return result;",
+      "  }",
+      "  ",
+      "  public final static ${1:retval} ValidateEditable(String recId) {",
+      "    ${1:retval} result = Validate(recId);",
+      "    if (!result.isEditable()) {",
+      "      throw new IllegalStateException(\"Access denied.\");",
+      "    }",
+      "    ",
+      "    return result;",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: staticms"
+  },
+  "NetBeans: main": {
+    "prefix": "main",
+    "body": [
+      "  public static void main(String[] args) throws Exception {",
+      "    ",
+      "  }$0"
+    ],
+    "description": "Converted from NetBeans code template: main"
+  },
+  "NetBeans: staticep": {
+    "prefix": "staticep",
+    "body": [
+      "  public final static EntityPredicate<${1:entity}> ${2:VAR} = new EntityPredicate<${1:entity}>() {",
+      "    @Override",
+      "    public boolean evaluate(${1:entity} ${3:lvar}) {",
+      "      return Objects.equals(${3:lvar}.${4:getMethod}(), this.getListener());",
+      "    }",
+      "  };$0"
+    ],
+    "description": "Converted from NetBeans code template: staticep"
+  },
+  "NetBeans: setem": {
+    "prefix": "setem",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"Set ${1:desc}\" >",
+      "  public final ${2:thisEntity} set${3:method}(${4:Entity} ${5:param}) {",
+      "    if ((this.${6:entityVar} = ${5:param}) == null) {",
+      "      this.set${7:idSetGetSuffix}(null);",
+      "    }",
+      "    else {",
+      "      this.set${7:idSetGetSuffix}(this.${6:entityVar}.get${7:idSetGetSuffix}());",
+      "    }",
+      "    return this;",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: setem"
+  },
+  "NetBeans: jsonm": {
+    "prefix": "jsonm",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"${1:desc} - \"/${2:mapping}\"\">",
+      "  @RequestMapping(\"/${2:mapping}\")",
+      "  public void ${3:method}(${4:params}, HttpServletRequest request, HttpServletResponse response) throws IOException {",
+      "    JSONObject jsonResponse = new JSONObject();",
+      "    try {",
+      "      UserContext.loggedInCheck();",
+      "      jsonResponse.put(\"data\", null).put(\"success\", true);",
+      "    } catch (Exception ex) {",
+      "      jsonResponse.put(\"success\", false).put(\"error\", ex.getMessage());",
+      "    } finally {",
+      "      response.setContentType(MediaType.APPLICATION_JSON_VALUE);",
+      "      response.getWriter().write(jsonResponse.toString());",
+      "    }",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: jsonm"
+  },
+  "NetBeans: getsetem": {
+    "prefix": "getsetem",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"Get & Set ${1:mname}\">",
+      "  public final ${2:Entity} get${2:Entity}() {",
+      "    if (this.${3:entityVar} == null && (this.get${4:Id}() != null)) {",
+      "      this.${3:entityVar} = ${2:Entity}.FindById(this.get${4:Id}());      ",
+      "    }",
+      "    return this.${3:entityVar};",
+      "  }",
+      "  ",
+      "  public final ${5:classVar} set${2:Entity}(${2:Entity} ${6:param}) {",
+      "    if ((this.${3:entityVar} = ${6:param}) == null) {",
+      "      this.set${4:Id}(null);",
+      "    }",
+      "    else {",
+      "      this.set${4:Id}(this.${3:entityVar}.get${4:Id}());",
+      "    }",
+      "    return this;",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: getsetem"
+  },
+  "NetBeans: staticval": {
+    "prefix": "staticval",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"Static Find/Validate By Id\">",
+      "  public final static ${1:entity} FindById(${2:idType} recId) {",
+      "    ${1:entity} result = new ${1:entity}();",
+      "    result.setUserId(SQL_EQUAL, recId).select();",
+      "    if (!result.recordFound()) {",
+      "      result = null;",
+      "    }    ",
+      "    return result;",
+      "  }",
+      "",
+      "  public final static ${1:entity} Validate(${2:idType} recId) {",
+      "    ${1:entity} result = FindById(recId);",
+      "    if (result == null || result.isDisabled()) {",
+      "      throw new NullPointerException(\"The record id is invalid.\");",
+      "    }",
+      "    return result;",
+      "  }",
+      "  ",
+      "  public final static ${1:entity} ValidateEditable(${2:idType} recId) {",
+      "    ${1:entity} result = Validate(recId);",
+      "    ",
+      "    if (!result.isEditable()) {",
+      "      throw new IllegalStateException(\"The record is not editable.\");",
+      "    }",
+      "    ",
+      "    return result;",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: staticval"
+  },
+  "NetBeans: viewm": {
+    "prefix": "viewm",
+    "body": [
+      "  // <editor-fold defaultstate=\"collapsed\" desc=\"${1:desc} - \"/${2:reqMap}\"\">",
+      "  @RequestMapping(\"/${2:reqMap}\")",
+      "  public String ${3:pageName}Page(${4:params}, ModelMap mmap, HttpServletRequest request, HttpServletResponse response) throws IOException {",
+      "    String result = null;",
+      "    ",
+      "    try {",
+      "      if (UserContext.isLoggedIn()) {",
+      "        result = \"${5:viewName}\";",
+      "      }",
+      "      else {",
+      "        result = \"redirect:/\";",
+      "      }",
+      "    }",
+      "    catch(Exception ex){",
+      "      response.sendError(response.SC_INTERNAL_SERVER_ERROR, ex.getMessage());",
+      "    }",
+      "    ",
+      "    return result;    ",
+      "  }",
+      "  // </editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: viewm"
+  },
+  "NetBeans: befores": {
+    "prefix": "befores",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"Before Insert/Update Overrides\">",
+      "  @Override",
+      "  protected void beforeInsert() {",
+      "    if (this.getUpdatedBy() == null) {",
+      "      if (UserContext.getInstance() != null) {",
+      "        this.setUpdatedBy(UserContext.getUserId());",
+      "      }",
+      "    }",
+      "    ",
+      "    this.setUpdatedDt(DateUtil.getNowAsTimestamp());",
+      "    this.setCreatedBy(this.getUpdatedBy());",
+      "    this.setCreatedDt(this.getUpdatedDt());",
+      "  }",
+      "",
+      "  @Override",
+      "  protected void beforeUpdate() {",
+      "    if (UserContext.getInstance() != null) {",
+      "      this.setUpdatedBy(UserContext.getUserId());",
+      "    }    ",
+      "    this.setUpdatedDt(DateUtil.getNowAsTimestamp());",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: befores"
+  },
+  "NetBeans: getcm": {
+    "prefix": "getcm",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"Get ${1:desc}\">",
+      "  /**",
+      "   * Get ${1:desc}",
+      "   * ",
+      "   * @return ${2:ECClass}",
+      "   */",
+      "  public final ${2:ECClass} ${3:getm}() {",
+      "    return this.${3:getm}(false);",
+      "  }",
+      "  ",
+      "  public final ${2:ECClass} ${3:getm}(boolean requery) {",
+      "    if ((this.${4:ECVar} == null) || requery) {",
+      "      this.${4:ECVar} = new ${2:ECClass}();",
+      "    }",
+      "    if (this.${4:ECVar}.isEmpty() && (this.${5:getLinkProp}() != null)) {",
+      "      this.${4:ECVar}.findAll(",
+      "        ConditionFilter.createInstance(\"disabled\", ConditionFilter.ConditionOperator.SQL_EQUAL, 0)",
+      "        ,ConditionFilter.createInstance(\"${6:linkProp}\", ConditionFilter.ConditionOperator.SQL_EQUAL, this.${5:getLinkProp}())",
+      "      );",
+      "    }    ",
+      "    return this.${4:ECVar};",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: getcm"
+  },
+  "NetBeans: strc": {
+    "prefix": "strc",
+    "body": [
+      "  ${1:strVal} != null && !${1:strVal}.trim().isEmpty()$0"
+    ],
+    "description": "Converted from NetBeans code template: strc"
+  },
+  "NetBeans: getem": {
+    "prefix": "getem",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"${1:desc} - ${2:mname}()\">",
+      "  public final ${3:entity} ${2:mname}() {",
+      "    if (this.${4:evar} == null && (this.${5:eget}() != null)) {",
+      "      this.${4:evar} = new ${3:entity}();",
+      "      this.${4:evar}.${6:eset}(ConditionFilter.ConditionOperator.SQL_EQUAL, this.${5:eget}()).select();",
+      "      if (!this.${4:evar}.recordFound()){",
+      "        this.${4:evar} = null;",
+      "      }",
+      "    }",
+      "    return this.${4:evar};",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: getem"
+  },
+  "NetBeans: isdisabled": {
+    "prefix": "isdisabled",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"Is Disabled\">",
+      "  public final boolean isDisabled(){",
+      "    return Objects.equals(this.getDisabled(), 1);",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: isdisabled"
+  },
+  "NetBeans: getlum": {
+    "prefix": "getlum",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"Get ${1:desc} - ${2:method}()\">",
+      "  public final ${3:entity} ${2:method}() {",
+      "    if (this.${4:prop} == null && (this.${5:keyMethod}() != null)) {",
+      "      this.${4:prop} = LookupDataContext.getInstance().${6:luCollection}().${7:findMethod}(this.${5:keyMethod}());",
+      "    }",
+      "    return this.${4:prop};",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: getlum"
+  },
+  "NetBeans: todtjson": {
+    "prefix": "todtjson",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"To Data Table Json\">",
+      "  public final JSONArray toDataTableJson() {",
+      "    return this.toJson(new JsonDelegate(){",
+      "      @Override",
+      "      public void handle(JSONObject json) throws Exception {",
+      "        ${1:entity} rec = this.getListener();",
+      "        final String EMPTY=\"\";",
+      "        String key=\"\";",
+      "      }",
+      "    });",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: todtjson"
+  },
+  "NetBeans: beforeset": {
+    "prefix": "beforeset",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"Before Set Override\">",
+      "  @Override",
+      "  protected void beforeSet(String fieldname, Object rawOldVal, Object rawNewVal) {",
+      "    final List<String> DO_NOT_TRACK_FIELDS = Arrays.asList(\"updatedDt\", \"updatedBy\", \"createdBy\", \"createdDt\");",
+      "    if (!this.isLoaded() ",
+      "      || Objects.equals(rawOldVal, rawNewVal) ",
+      "      || (rawOldVal == null && (\"\" + rawNewVal).trim().isEmpty())",
+      "      || (rawNewVal == null && (\"\" + rawOldVal).trim().isEmpty())",
+      "      || DO_NOT_TRACK_FIELDS.contains(fieldname)) {",
+      "      return;",
+      "    }",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: beforeset"
+  },
+  "NetBeans: voidm": {
+    "prefix": "voidm",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"${1:desc} - ${2:method}(${3:params})\">",
+      "  public final void ${2:method}(${3:params}) {",
+      "    ",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: voidm"
+  },
+  "NetBeans: findep": {
+    "prefix": "findep",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"${1:desc}\">",
+      "  public final ${2:entity} ${3:findMethod}(${4:type} ${5:var}) {",
+      "    ${6:EP}.setListener(${5:var});",
+      "    return this.find(${6:EP});",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: findep"
+  },
+  "NetBeans: jaxbm": {
+    "prefix": "jaxbm",
+    "body": [
+      "try {            ",
+      "                javax.xml.bind.JAXBContext jaxbCtx= javax.xml.bind.JAXBContext.newInstance( ${1:obj2BMarshalled}.getClass().getPackage().getName());",
+      "                javax.xml.bind.Marshaller marshaller = jaxbCtx.createMarshaller();",
+      "                marshaller.setProperty(javax.xml.bind.Marshaller.JAXB_ENCODING, \"UTF-8\"); //NOI18N",
+      "                marshaller.setProperty(javax.xml.bind.Marshaller.JAXB_FORMATTED_OUTPUT, Boolean.TRUE);",
+      "                marshaller.marshal(${1:obj2BMarshalled} , System.out);",
+      "            } catch (javax.xml.bind.JAXBException ex) {",
+      "                // XXXTODO Handle exception",
+      "                java.util.logging.Logger.getLogger(\"global\").log(java.util.logging.Level.SEVERE, null, ex); //NOI18N",
+      "        }$0"
+    ],
+    "description": "Sample template to marshal JAXB objects."
+  },
+  "NetBeans: setget": {
+    "prefix": "setget",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"Set/Get ${1:desc}\">",
+      "  private ${2:cls} m${3:var};",
+      "    this.m${3:var} = null;",
+      "",
+      "    public final void set${4:m}(${2:cls} ${3:var}) {",
+      "    this.m${3:var} = ${3:var};",
+      "  }",
+      "  ",
+      "  public final ${2:cls} get${4:m}(){",
+      "    return this.m${3:var};",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: setget"
+  },
+  "NetBeans: jaxbu": {
+    "prefix": "jaxbu",
+    "body": [
+      "            try {",
+      "                javax.xml.bind.JAXBContext jaxbCtx = javax.xml.bind.JAXBContext.newInstance(${1:umObj}.getClass().getPackage().getName());",
+      "                javax.xml.bind.Unmarshaller unmarshaller = jaxbCtx.createUnmarshaller();",
+      "                ${1:umObj} = ${2:TYPE_CAST} unmarshaller.unmarshal(new java.io.File(\"File path\")); //NOI18N",
+      "            } catch (javax.xml.bind.JAXBException ex) {",
+      "                // XXXTODO Handle exception",
+      "                java.util.logging.Logger.getLogger(\"global\").log(java.util.logging.Level.SEVERE, null, ex); //NOI18N",
+      "            }",
+      "        $0"
+    ],
+    "description": "Sample template to unmarshal JAXB objects."
+  },
+  "NetBeans: ecload": {
+    "prefix": "ecload",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"Load By Record Id\" >",
+      "  public final ${1:EC} load(List<${2:idtype}> ids) {    ",
+      "    if ((ids == null) || ids.isEmpty()) {",
+      "      for (${3:ecls} e : this) {",
+      "        e.setDisabled(1);",
+      "      }",
+      "    }",
+      "    else {",
+      "      for (${3:ecls} e : this) {",
+      "        if (!ids.contains(e.${4:idgetm}())) {",
+      "          e.setDisabled(1);",
+      "        }",
+      "        else {",
+      "          ids.remove(e.${4:idgetm}());",
+      "        }",
+      "      }",
+      "      ",
+      "      for (${2:idtype} id : ids) {",
+      "        this.add(new ${3:ecls}().${5:idsetm}(id));",
+      "      }",
+      "    }",
+      "    ",
+      "    return this;",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: ecload"
+  },
+  "NetBeans: sysout": {
+    "prefix": "sysout",
+    "body": [
+      "System.out.println(${1:string});$0"
+    ],
+    "description": "Converted from NetBeans code template: sysout"
+  },
+  "NetBeans: newm": {
+    "prefix": "newm",
+    "body": [
+      "  //<editor-fold defaultstate=\"collapsed\" desc=\"${1:Desc}\" >",
+      "  public final ${2:ret} ${3:mname}(${4:params}) {",
+      "    ${2:ret} result = null;",
+      "  ",
+      "    ",
+      "  ",
+      "    return result;",
+      "  }",
+      "  //</editor-fold>$0"
+    ],
+    "description": "Converted from NetBeans code template: newm"
+  }
+}

@@ -1,0 +1,433 @@
+{
+    "editor.suggest.insertMode": "replace",
+    "editor.linkedEditing": true,
+    "redhat.telemetry.enabled": false,
+    "git.confirmSync": false,
+    "git.autorefresh": true,
+    "explorer.confirmDragAndDrop": false,
+    "git.enableSmartCommit": false,
+    "git.suggestSmartCommit": false,
+    "editor.fontSize": 14,
+    "update.showReleaseNotes": false,
+    "zenMode.hideLineNumbers": false,
+    "vim.leader": "<Space>",
+    "vim.hlsearch": true,
+    "extensions.experimental.affinity": {
+        "vscodevim.vim": 1
+    },
+    "vim.normalModeKeyBindingsNonRecursive": [
+        {
+            "before": [
+                "j"
+            ],
+            "after": [
+                "g",
+                "j"
+            ]
+        },
+        {
+            "before": [
+                "k"
+            ],
+            "after": [
+                "g",
+                "k"
+            ]
+        },
+        {
+            "before": [
+                "<Down>"
+            ],
+            "after": [
+                "g",
+                "j"
+            ]
+        },
+        {
+            "before": [
+                "<Up>"
+            ],
+            "after": [
+                "g",
+                "k"
+            ]
+        },
+        {
+            "before": [
+                "u"
+            ],
+            "commands": [
+                "undo"
+            ]
+        },
+        {
+            "before": [
+                "<C-r>"
+            ],
+            "commands": [
+                "redo"
+            ]
+        },
+        {
+            "before": [
+                "<C-d>"
+            ],
+            "commands": [
+                "cursorPageDown"
+            ]
+        },
+        {
+            "before": [
+                "<C-u>"
+            ],
+            "commands": [
+                "cursorPageUp"
+            ]
+        },
+        {
+            "before": [
+                "<S-h>"
+            ],
+            "commands": [
+                ":bprevious"
+            ]
+        },
+        {
+            "before": [
+                "<S-l>"
+            ],
+            "commands": [
+                ":bnext"
+            ]
+        },
+        {
+            "before": [
+                "leader",
+                "v"
+            ],
+            "commands": [
+                ":vsplit"
+            ]
+        },
+        {
+            "before": [
+                "leader",
+                "s"
+            ],
+            "commands": [
+                ":split"
+            ]
+        },
+        {
+            "before": [
+                "<leader>",
+                "e"
+            ],
+            "commands": [
+                "workbench.view.explorer",
+                "workbench.files.action.focusFilesExplorer"
+            ]
+        },
+        {
+            "before": [
+                "leader",
+                "w"
+            ],
+            "commands": [
+                ":w!"
+            ]
+        },
+        {
+            "before": [
+                "leader",
+                "q"
+            ],
+            "commands": [
+                ":q!"
+            ]
+        },
+        {
+            "before": [
+                "[",
+                "d"
+            ],
+            "commands": [
+                "editor.action.marker.prev"
+            ]
+        },
+        {
+            "before": [
+                "]",
+                "d"
+            ],
+            "commands": [
+                "editor.action.marker.next"
+            ]
+        },
+        {
+            "before": [
+                "<leader>",
+                "c"
+            ],
+            "commands": [
+                "editor.action.quickFix"
+            ]
+        },
+        {
+            "before": [
+                "leader",
+                "f"
+            ],
+            "commands": [
+                "workbench.action.quickOpen"
+            ]
+        },
+        {
+            "before": [
+                "leader",
+                "p"
+            ],
+            "commands": [
+                "editor.action.formatDocument"
+            ]
+        },
+        {
+            "before": [
+                "g",
+                "h"
+            ],
+            "commands": [
+                "editor.action.showHover"
+            ]
+        },
+        {
+            "before": [
+                "<leader>",
+                "l"
+            ],
+            "commands": [
+                "editor.unfold"
+            ]
+        },
+        {
+            "before": [
+                "<leader>",
+                "h"
+            ],
+            "commands": [
+                "editor.fold"
+            ]
+        },
+        {
+            "before": [
+                "<leader>",
+                "a"
+            ],
+            "commands": [
+                "editor.unfoldAll"
+            ]
+        },
+        {
+            "before": [
+                "<leader>",
+                "z"
+            ],
+            "commands": [
+                "editor.foldLevel2"
+            ]
+        }
+    ],
+    "vim.visualModeKeyBindings": [
+        {
+            "before": [
+                "j"
+            ],
+            "after": [
+                "g",
+                "j"
+            ]
+        },
+        {
+            "before": [
+                "k"
+            ],
+            "after": [
+                "g",
+                "k"
+            ]
+        },
+        {
+            "before": [
+                "<"
+            ],
+            "commands": [
+                "editor.action.outdentLines"
+            ]
+        },
+        {
+            "before": [
+                ">"
+            ],
+            "commands": [
+                "editor.action.indentLines"
+            ]
+        },
+        {
+            "before": [
+                "J"
+            ],
+            "commands": [
+                "editor.action.moveLinesDownAction"
+            ]
+        },
+        {
+            "before": [
+                "K"
+            ],
+            "commands": [
+                "editor.action.moveLinesUpAction"
+            ]
+        },
+        {
+            "before": [
+                "leader",
+                "c"
+            ],
+            "commands": [
+                "editor.action.commentLine"
+            ]
+        }
+    ],
+    "rsp-ui.rsp.java.home": "C:\\Program Files\\Apache NetBeans\\jdk",
+    "terminal.integrated.env.windows": {
+        "JAVA_HOME": "C:\\Program Files\\Apache NetBeans\\jdk",
+        "PATH": "C:\\Program Files\\Apache NetBeans\\jdk;${env:PATH}"
+    },
+    "explorer.autoReveal": false,
+    "chat.viewSessions.orientation": "stacked",
+    "explorer.confirmDelete": false,
+    "comments.openView": "never",
+    "extensions.ignoreRecommendations": true,
+    "rsp-ui.enableStartServerOnActivation": [
+        {
+            "id": "redhat.vscode-community-server-connector",
+            "name": "Community Server Connector",
+            "startOnActivation": true
+        }
+    ],
+    "workbench.startupEditor": "none",
+    "git.openRepositoryInParentFolders": "always",
+    "vscodeAdapters.showChannelOnServerOutput": true,
+    "workbench.editor.enablePreview": false,
+    "workbench.editor.enablePreviewFromQuickOpen": false,
+    "editor.unfoldOnClickAfterEndOfLine": false,
+    "vim.foldfix": true,
+    "editor.foldingStrategy": "auto",
+    "editor.minimap.enabled": false,
+    "editor.wordWrap": "on",
+    "editor.wrappingIndent": "same",
+    "editor.lineNumbers": "relative",
+    "vim.smartRelativeLine": true,
+    "workbench.editor.tabSizingFixedMinWidth": 130,
+    "editor.stickyScroll.enabled": false,
+    "breadcrumbs.enabled": false,
+    "workbench.navigationControl.enabled": false,
+    "workbench.layoutControl.enabled": false,
+    "chat.titleBar.openInAgentsWindow.enabled": false,
+    "workbench.editor.doubleClickTabToToggleEditorGroupSizes": "off",
+    "window.menuBarVisibility": "compact",
+    "workbench.activityBar.location": "top",
+    "editor.tabSize": 2,
+    "workbench.activityBar.compact": true,
+    "editor.autoIndent": "full",
+    "editor.detectIndentation": true,
+    "workbench.editor.tabActionUnpinVisibility": false,
+    "workbench.editor.tabActionCloseVisibility": false,
+    "editor.tabCompletion": "on",
+    "workbench.statusBar.visible": false,
+    "sqldeveloper.telemetry.enabled": false,
+    "sqldeveloper.datagrid.fontFamily": "Consolas, 'Courier New', monospace",
+    "workbench.editor.wrapTabs": true,
+    "terminal.integrated.stickyScroll.enabled": false,
+    "terminal.integrated.profiles.linux": {
+        "bash": {
+            "path": "bash",
+            "icon": "terminal-bash"
+        },
+        "zsh": {
+            "path": "/usr/bin/zsh"
+        },
+        "fish": {
+            "path": "fish"
+        },
+        "tmux": {
+            "path": "tmux",
+            "icon": "terminal-tmux"
+        },
+        "pwsh": {
+            "path": "pwsh",
+            "icon": "terminal-powershell"
+        }
+    },
+    "terminal.integrated.defaultProfile.linux": "zsh",
+    "zoo-code.debug": false,
+    "zoo-code.allowedCommands": [
+        "git log",
+        "git show",
+        "auto-ant run compile",
+        "auto-ant",
+        "auto-ant run",
+        "git",
+        "git diff",
+        "git status",
+        "git status --short",
+        "git diff --stat",
+        "javap"
+    ],
+    "zoo-code.deniedCommands": [],
+    "workbench.editor.tabSizing": "fixed",
+    "workbench.editor.tabSizingFixedMaxWidth": 130,
+    "workbench.editor.pinnedTabSizing": "compact",
+    "window.density.editorTabHeight": "compact",
+    "workbench.colorTheme": "Visual Studio Dark",
+    "workbench.browser.enableRemoteProxy": true,
+    "workbench.browser.dataStorage": "workspace",
+    "workbench.browser.openLocalhostLinks": true,
+    "terminal.integrated.profiles.windows": {
+        "PowerShell": {
+            "source": "PowerShell",
+            "icon": "terminal-powershell"
+        },
+        "Command Prompt": {
+            "path": [
+                "${env:windir}\\Sysnative\\cmd.exe",
+                "${env:windir}\\System32\\cmd.exe"
+            ],
+            "args": [],
+            "icon": "terminal-cmd"
+        },
+        "Git Bash": {
+            "source": "Git Bash",
+            "icon": "terminal-git-bash"
+        },
+        "Ubuntu (WSL)": {
+            "path": "C:\\windows\\System32\\wsl.exe",
+            "args": [
+                "-d",
+                "Ubuntu"
+            ]
+        }
+    },
+    "terminal.integrated.defaultProfile.windows": "Ubuntu (WSL)",
+    "security.workspace.trust.untrustedFiles": "open",
+    "git.ignoreRebaseWarning": true,
+    "js/ts.experimental.useTsgo": true,
+    "security.allowedUNCHosts": [
+        "wsl.localhost"
+    ],
+    "remote.autoForwardPortsSource": "hybrid",
+    "svn.commit.changes.selectedAll": false,
+    "settingsSync.ignoredExtensions": [
+        "zoocodeorganization.zoo-code"
+    ],
+}

@@ -21,7 +21,26 @@ Dynamic colorschemes via [pywal](https://github.com/eendroroy/pywal16) and [matu
 | **.zshrc** | Zsh config with Oh My Zsh, Powerlevel10k, vi mode, aliases |
 | **.p10k.zsh** | Powerlevel10k prompt configuration |
 | **.gitconfig** | Git user settings |
-| **pi** | Pi coding agent settings, multi-subscription routing, OpenAI web search, and marketplace extensions |
+| **pi** | Pi coding agent settings/packages, multi-pass, web settings and Herdr extension |
+| **Claude Code / Codex / Copilot / Cursor** | Reviewed preferences, instructions, keybindings and Herdr hooks; filtered snapshots for mixed private-state files |
+| **VS Code / Cursor editor** | User settings, keybindings, snippets and extension ID manifests |
+| **OpenCode / Antigravity CLI** | OpenCode config/plugins and filtered Antigravity model/telemetry preferences |
+| **gh / htop** | GitHub CLI preferences/aliases and process-monitor layout |
+
+## Developer tool settings
+
+[Tool inventory, restore commands and privacy boundaries](tool-settings/README.md)
+document what is tracked and what stays local. Check or restore just these files:
+
+```bash
+python3 scripts/tool-settings.py status
+python3 scripts/tool-settings.py link
+```
+
+Credentials, conversations, installed package caches, workspace trust and account
+metadata are not exported. Codex/Cursor CLI preferences are filtered snapshots,
+not copies of their mixed account/state files. Tool binaries and logins are installed
+separately; restoring security-sensitive preference snapshots is opt-in.
 
 ## Desktop UI
 
@@ -83,7 +102,7 @@ chmod +x install.sh
 
 The script will:
 1. Install `yay` if missing
-2. Install all dependencies (official + AUR)
+2. Install desktop dependencies (official + AUR; developer tool CLIs are separate)
 3. Install Oh My Zsh and Powerlevel10k
 4. Stow the dotfiles
 5. Set zsh as default shell
@@ -97,8 +116,10 @@ cd ~/dotfiles
 stow --no-folding .
 ```
 
-Tests, repository maintenance scripts and Python bytecode are excluded by
-`.stow-local-ignore`; source config scripts and intentional skills are still linked.
+Tests, repository maintenance scripts, filtered tool snapshots and Python bytecode
+are excluded by `.stow-local-ignore`; source config scripts and intentional skills
+are still linked. On an existing machine, use the scoped tool linker above rather
+than adopting entire tool directories.
 
 To unlink:
 

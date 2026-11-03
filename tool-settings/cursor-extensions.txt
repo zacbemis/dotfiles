@@ -1,0 +1,15 @@
+anysphere.cursorpyright
+anysphere.remote-containers
+anysphere.remote-ssh
+elixir-lsp.elixir-ls
+esbenp.prettier-vscode
+ms-azuretools.vscode-containers
+ms-azuretools.vscode-docker
+ms-python.debugpy
+ms-python.python
+redhat.java
+rust-lang.rust
+slevesque.shader
+svelte.svelte-vscode
+victorbjorklund.phoenix
+vscodevim.vim

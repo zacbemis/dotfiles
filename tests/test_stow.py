@@ -28,7 +28,7 @@ class StowDeployment(unittest.TestCase):
                 ".config/demo/config.lua", ".config/demo/helper.py",
                 ".config/demo/__pycache__/helper.cpython-314.pyc",
                 ".config/demo/loose.pyc", ".config/demo/loose.pyo",
-                "tests/test_demo.py", "scripts/setup-agent-dev-server.sh",
+                "tests/test_demo.py", "scripts/setup-agent-dev-server.sh", "tool-settings/manifest.json",
                 "README.md", "skills/system/example/SKILL.md",
             ):
                 path = package / relative
@@ -41,7 +41,7 @@ class StowDeployment(unittest.TestCase):
                     self.assertTrue((home / relative).is_symlink())
                     self.assertEqual((home / relative).resolve(), package / relative)
             for relative in (".config/demo/__pycache__", ".config/demo/loose.pyc", ".config/demo/loose.pyo",
-                             "tests", "scripts", "README.md", ".stow-local-ignore"):
+                             "tests", "scripts", "tool-settings", "README.md", ".stow-local-ignore"):
                 with self.subTest(ignored=relative):
                     self.assertFalse((home / relative).exists())
                     self.assertFalse((home / relative).is_symlink())

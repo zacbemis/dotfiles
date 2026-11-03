@@ -1,0 +1,27 @@
+{
+  "model": "opus",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "^(startup|resume|clear|compact|fork)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'exec bash \"$HOME/.claude/hooks/herdr-agent-state.sh\" session'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "modelSettings": {
+    "claude-opus-5-5": {
+      "effortLevel": "high"
+    }
+  },
+  "theme": "dark",
+  "editorMode": "vim",
+  "enabledPlugins": {
+    "clangd-lsp@claude-plugins-official": true
+  }
+}
