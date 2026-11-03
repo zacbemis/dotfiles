@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class QuickshellOnly(unittest.TestCase):
+    # Negative regressions, not dependencies: these components must stay absent.
     def test_retired_configs_and_activation_override_are_removed(self):
         for relative in (
             ".config/waybar/config.jsonc", ".config/rofi/config.rasi",
@@ -21,6 +22,8 @@ class QuickshellOnly(unittest.TestCase):
             ".local/share/dbus-1/services/org.erikreider.swaync.cc.service",
         ):
             self.assertFalse((ROOT / relative).exists(), relative)
+
+    def test_notifications_activate_the_daily_quickshell_session(self):
         activation = (ROOT / ".local/share/dbus-1/services/org.freedesktop.Notifications.service").read_text()
         self.assertIn('desktop.sh\\" start', activation)
 
@@ -33,6 +36,34 @@ class QuickshellOnly(unittest.TestCase):
         for path in paths:
             with self.subTest(path=str(path.relative_to(ROOT))):
                 self.assertNotRegex(path.read_text(), r"(?i)\b(?:waybar|rofi|swaync|INSTALL_LEGACY_UI)\b")
+
+    def test_hyprland_starts_quickshell_in_both_config_formats(self):
+        modules = ROOT / ".config/hypr/hyprmodules"
+        for suffix, statement in (("conf", "exec-once = ~/.config/quickshell/desktop.sh start"),
+                                  ("lua", 'hl.exec_cmd("~/.config/quickshell/desktop.sh start")')):
+            with self.subTest(format=suffix):
+                source = (modules / f"autostart.{suffix}").read_text()
+                self.assertIn(statement, source)
+                self.assertEqual(source.count("desktop.sh start"), 1)
+
+    def test_desktop_keybindings_route_to_quickshell(self):
+        modules = ROOT / ".config/hypr/hyprmodules"
+        conf = (modules / "keybindings.conf").read_text()
+        lua = (modules / "keybindings.lua").read_text()
+        self.assertIn("$menu = ~/.config/quickshell/desktop.sh launcher", conf)
+        self.assertIn("bind = $mainMod, D, exec, $menu", conf)
+        self.assertIn('local menu = "~/.config/quickshell/desktop.sh launcher"', lua)
+        self.assertIn('hl.bind(mainMod .. " + D", hl.dsp.exec_cmd(menu))', lua)
+        for key, action in (("R", "restart"), ("W", "wallpaper"), ("comma", "settings")):
+            with self.subTest(key=key):
+                self.assertIn(f"bind = $mainMod, {key}, exec, ~/.config/quickshell/desktop.sh {action}", conf)
+                self.assertIn(f'hl.bind(mainMod .. " + {key}", hl.dsp.exec_cmd("~/.config/quickshell/desktop.sh {action}"))', lua)
+
+    def test_installer_requires_quickshell_and_native_support_tools(self):
+        installer = (ROOT / "install.sh").read_text()
+        for package in ("quickshell", "hyprlock", "hypridle", "awww", "network-manager-applet", "blueman"):
+            with self.subTest(package=package):
+                self.assertRegex(installer, rf"(?m)^    {package}$")
 
     def test_matugen_only_generates_supported_app_palettes(self):
         config = tomllib.loads((ROOT / ".config/matugen/config.toml").read_text())

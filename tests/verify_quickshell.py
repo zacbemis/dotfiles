@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI smoke tests and optional grim captures; never stops the existing UI stack."""
+"""Quickshell smoke tests and optional grim captures; never stops the daily shell."""
 import argparse
 import json
 import os
@@ -287,7 +287,7 @@ def test_shell(backend, screenshots):
                         assert ipc("tray", "menu", network["id"]) == "true"
                         ipc("launcher", "open")
                         assert all(not state["open"] for state in json.loads(ipc("tray", "status"))), "Picker must close the exclusive tray overlay"
-                        print("PASS retained nm-applet tray menu: themed dropdown, submenus, back/close (no network actions)")
+                        print("PASS Quickshell tray: themed nm-applet menu, submenus, back/close (no network actions)")
                     else:
                         print("SKIP live network menu: nm-applet is not registered")
                     ipc("launcher", "open")
@@ -325,7 +325,7 @@ def test_shell(backend, screenshots):
                     assert json.loads(ipc("wallpaper", "results")) == []
                     ipc("shell", "close")
                     assert json.loads(ipc("shell", "status"))["active"] == ""
-                    assert ipc("notifications", "preview", "Quickshell migration", "Native popups and history; the daily desktop is untouched.") == "true"
+                    assert ipc("notifications", "preview", "Quickshell notifications", "Native popups and history; the daily desktop is untouched.") == "true"
                     wait_for(status, lambda state: state["count"] == 1 and state["popups"] == 1)
                     if screenshots:
                         time.sleep(0.5)

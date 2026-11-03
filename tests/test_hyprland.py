@@ -40,7 +40,7 @@ if [[ ${0##*/} == hyprctl ]]; then
     exit "${RELOAD_STATUS:-0}"
 fi
 '''
-        for name in ["wal", "matugen", "hyprctl", "pkill", "swaync-client", "gsettings"]:
+        for name in ["wal", "matugen", "hyprctl", "pkill", "gsettings"]:
             executable = self.bins / name
             executable.write_text(mock)
             executable.chmod(0o755)

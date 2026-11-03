@@ -30,9 +30,11 @@ Scope {
         target: "fixture"
         function state(): string { return JSON.stringify({bar: ShellProfile.name, features: FeatureSettings.status(),
             colors: ShellProfile.wallpaperColors, autoHide: ShellProfile.autoHide, pinned: ShellProfile.pinned,
-            indicators: BarIndicators.status(), persistent: Preferences.persistent, error: Preferences.error, active: UiState.active}); }
+            indicators: BarIndicators.status(), persistent: Preferences.persistent, error: Preferences.error, active: UiState.active,
+            notificationMode: NotificationService.mode}); }
         function select(key: string, value: string): bool { return key === "bar" ? ShellProfile.select(value) : BarIndicators.keys.includes(key) ? BarIndicators.set(key, value) : FeatureSettings.select(key, value); }
         function flags(colors: bool, hide: bool, pinned: bool): void { ShellProfile.wallpaperColors = colors; ShellProfile.autoHide = hide; ShellProfile.pinned = pinned; }
+        function dispatch(feature: string): bool { return ShellProfile.activate(feature); }
         function settings(): void { UiState.show("settings"); }
         function flush(): void { Preferences.flush(); }
     }
@@ -139,6 +141,18 @@ Scope {
             data = json.loads((root / "preferences.json").read_text())
             self.assertEqual(data["brightnessIndicator"], "hidden")
             self.assertEqual(data["batteryIndicator"], "percent")
+
+    def test_disabled_notifications_never_dispatch_to_another_server(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.session(Path(tmp)) as ipc:
+                self.assertEqual(json.loads(ipc("state"))["notificationMode"], "off")
+                ipc("settings")
+                for profile in ("current", "enzo", "mm2103"):
+                    self.assertEqual(ipc("select", "bar", profile), "true")
+                    for feature in ("notifications", "dnd"):
+                        with self.subTest(profile=profile, feature=feature):
+                            self.assertEqual(ipc("dispatch", feature), "false")
+                            self.assertEqual(json.loads(ipc("state"))["active"], "settings")
 
     def test_immediate_shutdown_preserves_latest_choice(self):
         with tempfile.TemporaryDirectory() as tmp:

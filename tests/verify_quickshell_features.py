@@ -162,7 +162,7 @@ def verify(screenshots):
                     wait_for(opened_marker.exists, bool)
                     assert opened_marker.read_text() == str(target_file)
                     opened_marker.unlink()
-                print("PASS Rofi parity: all launcher views support explicit Run execution and exact-path file browsing/opening")
+                print("PASS Quickshell launcher: all views support terminal apps, explicit Run execution and exact-path file browsing/opening")
 
                 for view in ("gallery", "carousel", "current", "gallery"):
                     select("wallpaper", view)

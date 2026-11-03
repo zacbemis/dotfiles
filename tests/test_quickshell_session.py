@@ -42,7 +42,7 @@ class LauncherIndexes(unittest.TestCase):
             self.assertTrue(index.files(str(root / "missing" / "" ) + "/")["error"])
 
 
-class SessionTransactions(unittest.TestCase):
+class DesktopSession(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -99,7 +99,8 @@ class SessionTransactions(unittest.TestCase):
             self.assertEqual(spawn.call_count, 1)
             self.assertEqual(spawn.call_args.args[1], "desktop")
 
-    def test_stale_legacy_mode_cannot_redirect_start_or_panel_actions(self):
+    # Compatibility guards only: retired state/commands must never revive a UI.
+    def test_retired_mode_file_cannot_redirect_start_or_panel_actions(self):
         self.session.atomic(self.session.STATE / "mode", "legacy\n")
         for action in ("start", "activate", "launcher", "run", "files", "wallpaper", "notifications", "controls", "settings"):
             with self.subTest(action=action), \
@@ -134,6 +135,34 @@ class SessionTransactions(unittest.TestCase):
                     self.session.main()
                 spawn.assert_not_called()
                 stop.assert_not_called()
+
+    def test_restart_stops_own_shell_before_starting_and_skips_login_check(self):
+        calls = []
+        with patch.object(self.session.sys, "argv", ["desktop.sh", "restart"]), \
+             patch.object(self.session, "stop_shell", side_effect=lambda: calls.append("stop")), \
+             patch.object(self.session, "start_shell", side_effect=lambda: calls.append("start")):
+            self.session.main()
+        self.assertEqual(calls, ["stop", "start"])
+        self.assertEqual(self.session.ENV["QUICKSHELL_STARTUP_UPDATES"], "0")
+
+    def test_stop_only_targets_the_recorded_supervisor_and_shell(self):
+        supervisor = {"pid": 123, "start": "1"}
+        shell = {"pid": 124, "start": "2"}
+        with patch.object(self.session, "session", return_value={"supervisor": supervisor, "shell": shell}), \
+             patch.object(self.session, "alive", return_value=True), \
+             patch.object(self.session, "terminate") as terminate:
+            self.session.stop_shell()
+        self.assertEqual([call.args[0] for call in terminate.call_args_list], [[supervisor], [shell]])
+
+    def test_health_requires_server_mode_and_ownership_by_recorded_shell(self):
+        data = {"supervisor": {"pid": 123, "start": "1"}, "shell": {"pid": 124, "start": "2"}}
+        for notifications, owner, expected in (("server", 124, True), ("preview", 124, False), ("server", 999, False)):
+            with self.subTest(notifications=notifications, owner=owner), \
+                 patch.object(self.session, "session", return_value=data), \
+                 patch.object(self.session, "alive", return_value=True), \
+                 patch.object(self.session, "ipc", return_value=json.dumps({"notifications": notifications})), \
+                 patch.object(self.session, "notification_owner", return_value=owner):
+                self.assertEqual(self.session.healthy(), expected)
 
     def test_pid_identity_and_config_scope(self):
         own = self.session.identity(os.getpid())
