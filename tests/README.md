@@ -22,6 +22,8 @@ python3 -m unittest discover -s tests -v
   typography, contrast, input and layout. Optional tools are skipped when absent.
 - `test_hyprland.py`: Lua-only compositor loading, used/unique animation curves,
   input/environment cleanup, generated palette recovery and safe lockscreen parsing.
+- `test_hyprland_windows.py`: executes the actual Lua window rules against modal,
+  file/portal, browser-popup and normal-window fixtures, without a compositor.
 - `test_stow.py`: temporary-home deployment excludes bytecode, tests and maintenance
   scripts, while keeping source configs and skills. Also guards removed artifacts.
 - `test_tool_settings.py`: tracked tool config parsing, private-state ignore rules,
@@ -37,15 +39,17 @@ python3 tests/verify_quickshell.py
 python3 tests/verify_quickshell_features.py
 python3 tests/verify_quickshell_profiles.py
 python3 tests/verify_quickshell_settings.py
+# Separate browser popup regression, with a temporary profile and local HTML:
+python3 tests/verify_hyprland_windows.py
 ```
 
-These launch separate Quickshell instances, target their own PIDs and use temporary
+The Quickshell checks launch separate instances, target their own PIDs and use temporary
 state, fixture applications and stub wallpaper setters. Notifications use preview
 mode or a private D-Bus session, not a replacement for the daily server. Imported
 bar/layout alternatives are Quickshell renderers, not legacy desktop programs.
 The tests still exercise their UI, fonts, routing and shared services.
 
-The smoke tests reject runtime warnings as well as functional failures. On the
+The Quickshell smoke tests reject runtime warnings as well as functional failures. On the
 current Qt/Wayland stack, rapid panel switches can emit text-input focus warnings
 and fail that strict check even when all functional assertions pass. Do not remove
 the warning check or treat such a run as a complete pass. Screenshot options capture

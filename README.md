@@ -141,7 +141,7 @@ These are created at runtime by pywal/matugen and intentionally excluded:
 
 ## Notes
 
-- **Hyprland uses Lua only**: `~/.config/hypr/hyprland.lua` loads the modules in `hypr/hyprmodules/`. Edit `monitors.lua` for your display. Hyprlock/Hypridle and the generated color palette still use their own `.conf` files.
+- **Hyprland uses Lua only**: `~/.config/hypr/hyprland.lua` loads the modules in `hypr/hyprmodules/`. Edit `monitors.lua` for your display. Hyprlock/Hypridle and the generated color palette still use their own `.conf` files. See [dialog/window behavior and audit notes](.config/hypr/README.md) for floating rules, idle power commands, dependencies and verification.
 - **.oh-my-zsh** is not tracked — it's a git repo managed by `omz update`
 - **Pi auth, model cache, and sessions** are not tracked — settings, package declarations, multi-subscription routing, and web-search provider config are tracked
 - **Fonts used**: regular Ubuntu Sans for GTK;

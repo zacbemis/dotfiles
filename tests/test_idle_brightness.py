@@ -86,7 +86,7 @@ class IdleBrightness(unittest.TestCase):
         source = (ROOT / ".config/hypr/hypridle.conf").read_text()
         self.assertEqual(source.count("idle-brightness.py restore"), 2)
         self.assertEqual(source.count("idle-brightness.py dim"), 1)
-        for unchanged in ("timeout = 150", "timeout = 300", "timeout = 330", "timeout = 1800", "timeout = 3600", "systemctl suspend", "systemctl poweroff", "hyprctl dispatch dpms off"):
+        for unchanged in ("timeout = 150", "timeout = 300", "timeout = 330", "timeout = 1800", "timeout = 3600", "systemctl suspend", "systemctl poweroff", "display-power.sh off"):
             self.assertIn(unchanged, source)
         osd = (ROOT / ".config/quickshell/modules/osd/Osd.qml").read_text()
         self.assertNotIn("function onBrightnessPercentChanged", osd)

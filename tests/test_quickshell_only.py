@@ -53,7 +53,7 @@ class QuickshellOnly(unittest.TestCase):
 
     def test_installer_requires_quickshell_and_native_support_tools(self):
         installer = (ROOT / "install.sh").read_text()
-        for package in ("quickshell", "hyprlock", "hypridle", "awww", "network-manager-applet", "blueman"):
+        for package in ("quickshell", "hyprlock", "hypridle", "awww", "network-manager-applet", "blueman", "playerctl"):
             with self.subTest(package=package):
                 self.assertRegex(installer, rf"(?m)^    {package}$")
 

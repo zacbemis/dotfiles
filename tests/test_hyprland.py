@@ -110,6 +110,39 @@ fi
         config = tomllib.loads((REPO / ".config/matugen/config.toml").read_text())
         self.assertEqual(config["templates"]["hyprland"]["post_hook"], "~/.config/matugen/hooks/reload-hyprland.sh")
 
+    def test_display_power_uses_typed_lua_dispatchers(self):
+        self.generator("pywal")  # satisfy the isolated hyprctl mock
+        helper = REPO / ".config/hypr/scripts/display-power.sh"
+        for action in ("on", "off"):
+            self.log.unlink(missing_ok=True)
+            subprocess.run(["bash", str(helper), action], env=self.env, check=True, capture_output=True)
+            self.assertEqual(self.calls(), [f'hyprctl dispatch hl.dsp.dpms({{action="{action}"}})'])
+        for action in ("toggle", "on; false", ""):
+            self.log.unlink(missing_ok=True)
+            result = subprocess.run(["bash", str(helper), action], env=self.env, capture_output=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(self.calls(), [])
+
+    def test_idle_power_callbacks_use_the_helper_and_lock_is_single_instance(self):
+        source = (REPO / ".config/hypr/hypridle.conf").read_text()
+        self.assertNotIn("hyprctl dispatch dpms", source)
+        self.assertEqual(source.count("display-power.sh on"), 2)
+        self.assertEqual(source.count("display-power.sh off"), 1)
+        self.assertIn("on-timeout = pidof hyprlock || hyprlock", source)
+        lock = (REPO / ".config/hypr/hyprlock.conf").read_text()
+        self.assertNotIn("font_family = SF Pro Display 10", lock)
+
+    @unittest.skipUnless(shutil.which("hypridle"), "Hypridle is not installed")
+    def test_hypridle_parses_without_using_the_live_display(self):
+        result = subprocess.run(["hypridle", "--config", str(REPO / ".config/hypr/hypridle.conf")],
+                                env=self.env, capture_output=True, text=True, timeout=5,
+                                preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)))
+        output = result.stdout + result.stderr
+        self.assertNotIn("Config error", output)
+        self.assertNotIn("Config has errors", output)
+        self.assertIn("connect", output.lower())
+        self.assertNotEqual(result.returncode, 0)
+
     def test_lua_is_the_only_compositor_entrypoint(self):
         config = REPO / ".config/hypr"
         self.assertTrue((config / "hyprland.lua").is_file())
