@@ -45,9 +45,9 @@ Singleton {
     readonly property int barBatteryPaintSize: 15
     readonly property int barSettingsPaintSize: 15
     function barStatusPaintSize(kind, fallback) { return kind === "volume" ? barSoundPaintSize : kind === "battery" ? barBatteryPaintSize : fallback; }
-    readonly property int launcherIconSize: 24 // Rofi element-icon size
+    readonly property int launcherIconSize: 24
     readonly property int controlIconSize: 16
-    readonly property int notificationIconSize: 50 // SwayNC notification-icon-size
+    readonly property int notificationIconSize: 50
     readonly property int barPadding: 16 // GTK's 15px padding + 1px border
     readonly property int moduleSpacing: 8
     readonly property int traySpacing: 8
@@ -95,8 +95,7 @@ Singleton {
     Text { id: tooltipProbe; text: "Scroll to adjust"; font: root.tooltipFont }
     Text { id: iconProbe; text: "󰕾"; font: root.barIconFont }
 
-    // Shared Pywal/Matugen output, watched read-only. Legacy palettes remain
-    // available for rollback but Quickshell has its own canonical destination.
+    // Canonical Pywal/Matugen output, watched read-only.
     readonly property string palettePath: Quickshell.env("QUICKSHELL_PALETTE")
         || (Quickshell.env("HOME") || "") + "/.config/quickshell/colors.css"
     property var palette: ({})

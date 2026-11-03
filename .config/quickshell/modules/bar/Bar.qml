@@ -173,8 +173,7 @@ Scope {
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 8
 
-                    // Same Arch notification glyph used by the current
-                    // custom/notification Waybar module.
+                    // Notification center, DND and unread count.
                     BarPill {
                         id: notificationPill
                         implicitWidth: notificationRow.implicitWidth + 2 * Theme.barPadding
@@ -206,16 +205,8 @@ Scope {
                             acceptedButtons: Qt.LeftButton | Qt.RightButton
                             cursorShape: Qt.PointingHandCursor
                             onClicked: function(mouse) {
-                                // Keep SwayNC as the live notification UI until
-                                // Quickshell notifications are explicitly enabled.
-                                if (!root.notificationUi) {
-                                    Quickshell.execDetached([
-                                        "swaync-client",
-                                        mouse.button === Qt.RightButton ? "-d" : "-t",
-                                        "-sw"
-                                    ]);
-                                    return;
-                                }
+                                // Isolated runners can disable notification UI.
+                                if (!root.notificationUi) return;
                                 if (mouse.button === Qt.RightButton)
                                     root.notificationUi.toggleDnd();
                                 else
@@ -351,7 +342,7 @@ Scope {
                     ThemeText {
                         id: clockText
                         anchors.centerIn: parent
-                        // Match Waybar `{:%I:%M %p}` (12-hour, zero-padded).
+                        // 12-hour, zero-padded clock.
                         text: Qt.locale("en_US").toString(clock.date, "hh:mm AP")
                         color: Theme.inversePrimaryInk
                         textRole: "bar"

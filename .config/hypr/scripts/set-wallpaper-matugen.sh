@@ -12,7 +12,6 @@ ln -sf "$img" "$HOME/.config/hypr/current_wallpaper"
 (matugen image "$img" >/dev/null 2>&1) &
 disown || true
 
-# Quickshell watches its palette. Matugen's mode-aware hooks handle an explicit
-# legacy rollback; never auto-activate SwayNC after the daily-shell cutover.
+# Quickshell watches the generated palette directly; no UI restart is needed.
 
 exit 0

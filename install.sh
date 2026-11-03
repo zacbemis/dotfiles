@@ -30,7 +30,7 @@ OFFICIAL=(
     hypridle
     xdg-desktop-portal-hyprland
 
-    # daily bar, launcher, notifications (legacy stack is opt-in below)
+    # desktop bar, launcher, notifications
     quickshell
     python
     python-gobject
@@ -102,12 +102,6 @@ OFFICIAL=(
     ttf-nerd-fonts-symbols
 )
 
-# Retain a runnable rollback stack when explicitly requested; do not uninstall
-# existing packages during migration.
-if [[ "${INSTALL_LEGACY_UI:-0}" == 1 ]]; then
-    OFFICIAL+=(waybar rofi swaync)
-fi
-
 # ── AUR packages ─────────────────────────────────────────────────────
 AUR=(
     python-pywal16
@@ -144,9 +138,6 @@ info "Stowing dotfiles..."
 # create dirs that receive runtime-generated color files
 mkdir -p "$HOME/.config/quickshell" \
          "$HOME/.config/hypr/colors" \
-         "$HOME/.config/waybar/colors" \
-         "$HOME/.config/rofi/colors" \
-         "$HOME/.config/swaync/colors" \
          "$HOME/.config/nvim/lua/colors" \
          "$HOME/.config/kitty" \
          "$HOME/.config/gtk-3.0" \
@@ -188,7 +179,7 @@ info "Done! Next steps:"
 echo "  1. Log out and log into a Hyprland session"
 echo "  2. Set a wallpaper:  ~/.config/hypr/scripts/set-wallpaper.sh ~/Pictures/wallpapers/something.png"
 echo "  3. Edit monitor config if needed:  ~/.config/hypr/hyprmodules/monitors.lua"
-echo "  4. For a live-session handoff: ~/.config/quickshell/desktop.sh activate"
-echo "     Rollback: ~/.config/quickshell/desktop.sh legacy (requires legacy packages)"
+echo "  4. Start the desktop UI: ~/.config/quickshell/desktop.sh start"
+echo "     Stop any other notification server first; Quickshell will not evict it."
 echo ""
 warn "The monitor is set to 2880x1800@60 — change this in monitors.lua for your display."

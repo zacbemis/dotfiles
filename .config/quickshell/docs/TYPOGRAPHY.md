@@ -62,11 +62,8 @@ size/weight overrides, default controls, rendered child labels/icons and explici
 weight overrides. Source guards reject unclassified runtime `ThemeText` uses
 and any reintroduction of Ubuntu text faces into runtime Quickshell code.
 
-## Waybar is separate
+## Archived desktop and reference sources
 
-The always-running existing Waybar is not a Quickshell profile. Its stylesheet is
-`.config/waybar/style.css`: primary labels/buttons explicitly request SF Pro
-Display Bold, with Nerd icon fallback; tooltip copy requests Ubuntu Sans Regular.
-Existing processes can retain their old stylesheet/font selection until reloaded.
-A Waybar config/CSS reload does not install, autostart or switch to Quickshell.
+The former Waybar stylesheet is preserved only on
+`snapshot/pre-quickshell-cleanup-2026-11-03`; it is not an active Quickshell profile.
 Upstream files under `vendor/` are reference snapshots, not active configuration.

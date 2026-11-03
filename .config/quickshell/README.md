@@ -1,25 +1,25 @@
 # Quickshell desktop shell
 
-The daily replacement for the configured Waybar, SwayNC and Rofi workflows.
-Hyprland startup and Super+D/W/R use the checked session helper. The old stack
-is retained as an inactive rollback option; wallpaper/color generators and
-non-UI desktop bindings stay in place. See [docs/CAPABILITY-AUDIT.md](docs/CAPABILITY-AUDIT.md).
+The desktop bar, launcher, notifications and quick controls.
+Hyprland startup and Super+D/W/R use the checked session helper. Wallpaper/color
+generators and non-UI desktop bindings stay in place. The previous desktop is
+archived on `snapshot/pre-quickshell-cleanup-2026-11-03`, not an in-session fallback.
+See [docs/CAPABILITY-AUDIT.md](docs/CAPABILITY-AUDIT.md) for the historical mapping.
 
 Tested with Arch Quickshell **0.3.1**, Qt Quick Controls and Python 3.
 See [docs/RESEARCH.md](docs/RESEARCH.md) for the architecture review, upstream
 source references (Caelestia/DankMaterialShell), decisions and remaining limits.
 Cutover constraints are in [docs/MIGRATION.md](docs/MIGRATION.md).
 
-## Daily session and rollback
+## Daily session
 
 ```bash
 ~/.config/quickshell/desktop.sh start       # idempotent daily server
 ~/.config/quickshell/desktop.sh status
-~/.config/quickshell/desktop.sh activate    # checked handoff / return from legacy
-~/.config/quickshell/desktop.sh legacy      # rollback to retained old stack
+~/.config/quickshell/desktop.sh restart     # restart only this daily instance
 ```
 
-See [docs/MIGRATION.md](docs/MIGRATION.md) for ownership checks, logs and backups.
+See [docs/MIGRATION.md](docs/MIGRATION.md) for ownership checks, logs and recovery.
 
 ## Panel navigation
 
@@ -74,7 +74,7 @@ bash .config/quickshell/run.sh --preview
 ```
 
 `--preview` enables notification UI without claiming the notification D-Bus
-name; SwayNC still receives all live notifications. Omit it to disable the
+name; the daily shell still receives all live notifications. Omit it to disable the
 notification UI entirely. Add `--no-bar` to test just the pickers/notifications
 without a second bar. Stop with Ctrl+C. QML live-reloads.
 
@@ -109,7 +109,7 @@ supported behavior, [docs/COMPARISON.md](docs/COMPARISON.md) for bars, and
 - Clock: display-only; hover for the full weekday/date/year. No click actions.
 - Arch button: notification center; right click toggles DND. Unread notifications
   add a count badge; opening the center marks history as read. With notification
-  UI disabled, both clicks continue to control SwayNC instead.
+  UI disabled in an isolated runner, these clicks do nothing.
 - Workspace buttons show app icons and activate their workspace.
 - Volume: click to open/close Sound, with output/microphone volume and mute,
   device dropdowns and an Applications mixer. Scroll still adjusts in 2% steps.
@@ -124,7 +124,7 @@ supported behavior, [docs/COMPARISON.md](docs/COMPARISON.md) for bars, and
 - Launcher: Apps / Run / Files / Wallpapers tabs; `>` enters a command, absolute
   or `~/` paths browse files. PATH/run history and directory indexes never execute
   on typing. Enter opens a file, enters a folder or explicitly runs a command.
-  Terminal desktop entries use Kitty; existing Rofi usage is read-only.
+  Terminal desktop entries use Kitty; usage history is local to Quickshell.
 - Pickers: type to search, Ctrl+A/Backspace to clear, arrows/PageUp/PageDown to select,
   Enter to activate, Escape or an outside click to close. Keyboard navigation
   also works after focusing a picker control. Opening a picker closes tray menus;
@@ -223,10 +223,10 @@ existing desktop stack.
   and resize limitations; each menu depth retains its opener so submenu handles
   stay alive. `components/ThemeTooltip.qml` is shared by bar and general controls.
 - `modules/launcher/`: desktop entries, multi-term search and usage sorting.
-  Reads Rofi's frequency cache but writes only its own Quickshell state file.
+  Reads and writes only its own Quickshell usage history and pins.
 - `modules/wallpaper/`, `scripts/wallpaper-scan.py`: bounded asynchronous previews
   and thumbnails, current-wallpaper indication, and exact JSON discovery of
-  duplicate basenames, Unicode, spaces and newlines. No Rofi cache modifications;
+  duplicate basenames, Unicode, spaces and newlines;
   hidden pickers release thumbnail delegates and the preview source after exit.
 - `services/Notification{Service,Backend,Record,GroupData}.qml`: optional server,
   bounded history/popups, client replacement/closure, sticky/transient records,
@@ -260,7 +260,7 @@ invocation failures, not the eventual result of its background children.
 ## Fonts and wallpaper colors
 
 The current wallpaper setter uses **Pywal, not Wallust**. `wal-post.sh` links
-`~/.config/quickshell/colors.css` to `~/.cache/wal/colors-waybar-custom.css`.
+`~/.config/quickshell/colors.css` to `~/.cache/wal/colors-quickshell-custom.css`.
 The optional Matugen path writes the same canonical Quickshell palette. Quickshell only reads
 that output; it never modifies generated files or runs a second color generator.
 
@@ -340,7 +340,7 @@ available. Third-party pixmap icons are not cropped or artificially enlarged.
 
 - Workspace width/background transitions: **300ms CSS ease-in-out**. Text follows
   each animated background frame directly to avoid low-contrast interpolation.
-- SwayNC-style controls and DND thumb: **200ms CSS ease**. Rofi selections remain
+- Controls and DND thumb: **200ms CSS ease**. Picker selections remain
   immediate; no extra hover scale, bounce, or spring is introduced.
 - Picker cards: **85% → 100% pop-in** with the inherited Hyprland layer duration/
   curve. Fade and center motion use the inherited layer-fade settings. These
@@ -396,7 +396,7 @@ Requires `notify-send`, `gdbus`, `dbus-run-session`; screenshot mode also needs
 `grim` and captures your open desktop/apps. Use screenshot mode on an **unlocked
 desktop** and visually inspect the results: lock-screen captures do not validate
 the widget appearance. No live wallpaper is applied, no
-packages are updated, and SwayNC/Waybar are never stopped.
+packages are updated, and the daily desktop is never stopped.
 
 Menu selection screenshots normally use keyboard-navigation IPC (`tray next`).
 For actual pointer-hover capture, optionally set `QUICKSHELL_POINTER_CLI` to a
@@ -404,8 +404,8 @@ no-argument executable emitting a small real Wayland pointer movement, **without
 clicking**. Compositor cursor warps alone do not emit pointer motion. The test
 restores the original cursor position afterward.
 
-For live notifications use `desktop.sh activate`; it checks ownership, performs
-an orderly SwayNC handoff and rolls back on failure. For isolated development,
+For live notifications use `desktop.sh start`; it checks ownership and refuses
+to replace another notification server. For isolated development,
 `QUICKSHELL_NOTIFICATIONS=server` must only be used on a private bus or after
 releasing the live name. The legacy
 `QUICKSHELL_ENABLE_NOTIFICATIONS=1` still works. Do not run two real servers
@@ -419,5 +419,5 @@ on the same session bus.
 - DND/history reset on process restart; tracked notifications survive QML reload.
 - Multi-monitor/hotplug and physical small-screen behavior still need testing;
   compact wallpaper-card layout is now covered without changing output settings.
-- Legacy configs/packages remain available for explicit rollback; they are not
-  autostarted or revived by color hooks in Quickshell mode.
+- The old desktop configs are archived on the snapshot branch. There is no
+  in-session fallback; startup failures report the desktop log.

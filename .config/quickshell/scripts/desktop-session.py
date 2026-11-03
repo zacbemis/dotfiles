@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Single-instance daily shell, checked notification handoff and legacy rollback.
+"""Single-instance Quickshell desktop with checked notification ownership.
 
-Only activate/legacy change desktop ownership. Normal start never evicts an
-unrelated notification server. All process signals are restricted to this user,
-this session, or recorded PID/start-time identities belonging to this config.
+Never evict another notification server. Process signals are restricted to
+recorded PID/start-time identities belonging to this user and config.
 """
 import contextlib
 import fcntl
@@ -35,13 +34,6 @@ def atomic(path, data):
     temporary.replace(path)
 
 
-def mode():
-    try:
-        return "legacy" if (STATE / "mode").read_text().strip() == "legacy" else "quickshell"
-    except FileNotFoundError:
-        return "quickshell"
-
-
 def identity(pid):
     try:
         directory = Path(f"/proc/{pid}")
@@ -63,29 +55,6 @@ def session():
         return value if value.get("config") == str(CONFIG) else {}
     except (OSError, ValueError):
         return {}
-
-
-def bus_path(address):
-    match = re.search(r"(?:^|;)unix:path=([^,;]+)", address)
-    return match[1] if match else address
-
-
-def legacy_pids(name):
-    found = []
-    for directory in Path("/proc").iterdir():
-        if not directory.name.isdigit():
-            continue
-        try:
-            if directory.stat().st_uid != os.getuid() or (directory / "comm").read_text().strip() != name:
-                continue
-            environment = dict(item.split("=", 1) for item in (directory / "environ").read_bytes().decode(errors="replace").split("\0") if "=" in item)
-            if bus_path(environment.get("DBUS_SESSION_BUS_ADDRESS", "")) == bus_path(ENV.get("DBUS_SESSION_BUS_ADDRESS", "")):
-                record = identity(int(directory.name))
-                if record:
-                    found.append(record)
-        except (OSError, ValueError):
-            continue
-    return found
 
 
 def terminate(records):
@@ -203,7 +172,7 @@ def start_shell():
         pass
     else:
         if owner is not None:
-            raise RuntimeError(f"Notification name is owned by PID {owner}; use 'activate' for a checked SwayNC handoff")
+            raise RuntimeError(f"Notification name is owned by PID {owner}; stop that server explicitly before starting Quickshell")
         spawn([sys.executable, str(Path(__file__).resolve()), "serve"], "desktop")
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
@@ -213,54 +182,17 @@ def start_shell():
     raise RuntimeError(f"Quickshell failed its bus/IPC health check; see {STATE / 'desktop.log'}")
 
 
-def start_legacy():
-    for name in ("waybar", "swaync"):
-        if not legacy_pids(name):
-            if name == "swaync" and notification_owner() is not None:
-                raise RuntimeError("Cannot start SwayNC alongside another notification server")
-            spawn([name], name)
+def check_dependencies():
+    missing = [name for name in ("qs", "gdbus", "bash") if not shutil.which(name)]
+    if not (CONFIG / "shell.qml").is_file():
+        missing.append(str(CONFIG / "shell.qml"))
+    if missing:
+        raise RuntimeError("Missing daily-shell dependencies/config: " + ", ".join(missing))
 
 
 def activate():
-    missing = [name for name in ("qs", "gdbus", "bash") if not shutil.which(name)]
-    if missing or not (CONFIG / "shell.qml").is_file():
-        raise RuntimeError("Missing daily-shell dependencies/config: " + ", ".join(missing))
-    # Keep the existing bar visible until the replacement is actually healthy.
-    swaync = legacy_pids("swaync")
-    owner = notification_owner()
-    if owner is not None and owner not in [record["pid"] for record in swaync] and not healthy():
-        raise RuntimeError(f"Refusing to replace an unrelated notification server (PID {owner})")
-    old_mode = "legacy" if swaync or legacy_pids("waybar") else mode()
-    try:
-        terminate(swaync)
-        deadline = time.monotonic() + 3
-        while notification_owner() in [record["pid"] for record in swaync] and time.monotonic() < deadline:
-            time.sleep(.05)
-        start_shell()
-        terminate(legacy_pids("waybar"))
-        atomic(STATE / "mode", "quickshell\n")
-    except Exception:
-        stop_shell()
-        atomic(STATE / "mode", old_mode + "\n")
-        start_legacy()
-        raise
-
-
-def legacy():
-    stop_shell()
-    atomic(STATE / "mode", "legacy\n")
-    start_legacy()
-
-
-def palette():
-    # Quickshell watches its canonical palette. Never auto-start retired daemons.
-    if mode() == "legacy":
-        for record in legacy_pids("waybar"):
-            if alive(record):
-                os.kill(record["pid"], signal.SIGUSR2)
-        if legacy_pids("swaync"):
-            run(["swaync-client", "-R"])
-            run(["swaync-client", "-rs"])
+    check_dependencies()
+    start_shell()
 
 
 def main():
@@ -268,42 +200,23 @@ def main():
     if action == "serve":
         serve()
         return
-    if action == "palette":
-        palette()
-        return
     with operation_lock():
-        if action == "activate":
+        if action in {"start", "activate"}:
             activate()
-        elif action == "legacy":
-            legacy()
         elif action == "stop":
             stop_shell()
         elif action == "status":
-            print(json.dumps({"mode": mode(), "healthy": healthy(), "notificationOwner": notification_owner(), "session": session()}))
-        elif action in {"start", "restart"}:
-            if mode() == "legacy":
-                if action == "restart":
-                    terminate(legacy_pids("waybar") + legacy_pids("swaync"))
-                start_legacy()
-            else:
-                if action == "restart":
-                    stop_shell()
-                    ENV["QUICKSHELL_STARTUP_UPDATES"] = "0"
-                start_shell()
+            print(json.dumps({"mode": "quickshell", "healthy": healthy(), "notificationOwner": notification_owner(), "session": session()}))
+        elif action == "restart":
+            check_dependencies()
+            stop_shell()
+            ENV["QUICKSHELL_STARTUP_UPDATES"] = "0"
+            start_shell()
         elif action in {"launcher", "wallpaper", "notifications", "controls", "settings", "run", "files"}:
-            if mode() == "legacy":
-                if action == "settings":
-                    raise RuntimeError("Quickshell settings require daily Quickshell mode; use desktop.sh activate first")
-                if action in {"launcher", "run", "files", "wallpaper"}:
-                    selected = {"launcher": "drun", "run": "run", "files": "filebrowser", "wallpaper": "wallpaper"}[action]
-                    spawn(["rofi", "-show", selected, "-theme", str(Path.home() / ".config/rofi/theme.rasi")], "rofi")
-                else:
-                    run(["swaync-client", "-t", "-sw"])
-            else:
-                start_shell()
-                print(ipc("launcher", "mode", action) if action in {"run", "files"} else ipc(action, "toggle"))
+            activate()
+            print(ipc("launcher", "mode", action) if action in {"run", "files"} else ipc(action, "toggle"))
         else:
-            raise RuntimeError("usage: desktop.sh start|activate|restart|stop|status|legacy|palette|launcher|run|files|wallpaper|notifications|controls|settings")
+            raise RuntimeError("usage: desktop.sh start|activate|restart|stop|status|launcher|run|files|wallpaper|notifications|controls|settings")
 
 
 if __name__ == "__main__":

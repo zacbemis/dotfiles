@@ -1,5 +1,6 @@
-"""Migration helpers: read-only indexes, checked handoff/rollback and safe markup."""
+"""Desktop helpers: read-only indexes, checked startup and safe markup."""
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -51,63 +52,95 @@ class SessionTransactions(unittest.TestCase):
         binaries = patch.object(self.session.shutil, "which", side_effect=lambda name: "/fixture/" + name)
         binaries.start()
         self.addCleanup(binaries.stop)
-        self.old_notification = {"pid": 123, "start": "1"}
-        self.old_bar = {"pid": 124, "start": "2"}
 
-    def processes(self, name):
-        return [self.old_notification] if name == "swaync" else [self.old_bar]
-
-    def test_activate_keeps_old_bar_until_healthy(self):
-        order = []
-        with patch.object(self.session, "legacy_pids", side_effect=self.processes), \
-             patch.object(self.session, "notification_owner", return_value=123), \
-             patch.object(self.session, "healthy", return_value=False), \
-             patch.object(self.session, "terminate", side_effect=lambda rows: order.append(rows)), \
-             patch.object(self.session, "start_shell", side_effect=lambda: order.append("ready")):
+    def test_start_is_idempotent_when_healthy(self):
+        with patch.object(self.session, "healthy", return_value=True), \
+             patch.object(self.session, "spawn") as spawn, \
+             patch.object(self.session, "terminate") as terminate:
             self.session.activate()
-        self.assertEqual(order, [[self.old_notification], "ready", [self.old_bar]])
-        self.assertEqual(self.session.mode(), "quickshell")
+            self.session.activate()
+            spawn.assert_not_called()
+            terminate.assert_not_called()
 
-    def test_failed_handoff_restores_legacy_without_killing_bar(self):
-        order = []
-        with patch.object(self.session, "legacy_pids", side_effect=self.processes), \
-             patch.object(self.session, "notification_owner", return_value=123), \
-             patch.object(self.session, "healthy", return_value=False), \
-             patch.object(self.session, "terminate", side_effect=lambda rows: order.append(rows)), \
-             patch.object(self.session, "start_shell", side_effect=RuntimeError("fixture failure")), \
-             patch.object(self.session, "stop_shell", side_effect=lambda: order.append("stop-own")), \
-             patch.object(self.session, "start_legacy", side_effect=lambda: order.append("restore")):
-            with self.assertRaisesRegex(RuntimeError, "fixture failure"):
-                self.session.activate()
-        self.assertEqual(order, [[self.old_notification], "stop-own", "restore"])
-        self.assertEqual(self.session.mode(), "legacy")
+    def test_start_spawns_only_the_daily_supervisor(self):
+        with patch.object(self.session, "healthy", side_effect=[False, True]), \
+             patch.object(self.session, "notification_owner", return_value=None), \
+             patch.object(self.session, "session", return_value={}), \
+             patch.object(self.session, "spawn") as spawn:
+            self.session.activate()
+            spawn.assert_called_once_with(
+                [self.session.sys.executable, str(CONFIG / "scripts/desktop-session.py"), "serve"], "desktop")
 
     def test_unknown_notification_owner_is_never_evicted(self):
-        with patch.object(self.session, "legacy_pids", return_value=[]), \
-             patch.object(self.session, "notification_owner", return_value=999), \
+        with patch.object(self.session, "notification_owner", return_value=999), \
              patch.object(self.session, "healthy", return_value=False), \
-             patch.object(self.session, "terminate") as terminate:
-            with self.assertRaisesRegex(RuntimeError, "unrelated"):
+             patch.object(self.session, "terminate") as terminate, \
+             patch.object(self.session, "spawn") as spawn:
+            with self.assertRaisesRegex(RuntimeError, "owned by PID 999"):
                 self.session.activate()
             terminate.assert_not_called()
+            spawn.assert_not_called()
 
     def test_missing_dependencies_fail_before_stopping_anything(self):
-        with patch.object(self.session.shutil, "which", return_value=None), patch.object(self.session, "terminate") as terminate:
+        with patch.object(self.session.shutil, "which", return_value=None), \
+             patch.object(self.session, "stop_shell") as stop, \
+             patch.object(self.session.sys, "argv", ["desktop.sh", "restart"]):
             with self.assertRaisesRegex(RuntimeError, "Missing"):
-                self.session.activate()
-            terminate.assert_not_called()
+                self.session.main()
+            stop.assert_not_called()
 
-    def test_pid_identity_and_bus_scope(self):
+    def test_failed_start_does_not_launch_an_alternative_ui(self):
+        with patch.object(self.session, "healthy", return_value=False), \
+             patch.object(self.session, "notification_owner", return_value=None), \
+             patch.object(self.session, "spawn") as spawn, \
+             patch.object(self.session.time, "monotonic", side_effect=[0, 16]):
+            with self.assertRaisesRegex(RuntimeError, "health check"):
+                self.session.activate()
+            self.assertEqual(spawn.call_count, 1)
+            self.assertEqual(spawn.call_args.args[1], "desktop")
+
+    def test_stale_legacy_mode_cannot_redirect_start_or_panel_actions(self):
+        self.session.atomic(self.session.STATE / "mode", "legacy\n")
+        for action in ("start", "activate", "launcher", "run", "files", "wallpaper", "notifications", "controls", "settings"):
+            with self.subTest(action=action), \
+                 patch.object(self.session.sys, "argv", ["desktop.sh", action]), \
+                 patch.object(self.session, "start_shell") as start, \
+                 patch.object(self.session, "ipc", return_value="true") as ipc, \
+                 patch("sys.stdout", new_callable=io.StringIO):
+                self.session.main()
+                start.assert_called_once()
+                if action in {"start", "activate"}:
+                    ipc.assert_not_called()
+                elif action in {"run", "files"}:
+                    ipc.assert_called_once_with("launcher", "mode", action)
+                else:
+                    ipc.assert_called_once_with(action, "toggle")
+
+    def test_status_always_reports_quickshell(self):
+        self.session.atomic(self.session.STATE / "mode", "legacy\n")
+        with patch.object(self.session.sys, "argv", ["desktop.sh", "status"]), \
+             patch.object(self.session, "healthy", return_value=True), \
+             patch.object(self.session, "notification_owner", return_value=123), \
+             patch("sys.stdout", new_callable=io.StringIO) as output:
+            self.session.main()
+        self.assertEqual(json.loads(output.getvalue())["mode"], "quickshell")
+
+    def test_removed_actions_fail_without_starting_or_stopping_anything(self):
+        for action in ("legacy", "palette"):
+            with patch.object(self.session.sys, "argv", ["desktop.sh", action]), \
+                 patch.object(self.session, "spawn") as spawn, \
+                 patch.object(self.session, "stop_shell") as stop:
+                with self.assertRaisesRegex(RuntimeError, "usage"):
+                    self.session.main()
+                spawn.assert_not_called()
+                stop.assert_not_called()
+
+    def test_pid_identity_and_config_scope(self):
         own = self.session.identity(os.getpid())
         self.assertTrue(self.session.alive(own))
         self.assertFalse(self.session.alive(dict(own, start="not-the-same-process")))
-        self.assertEqual(self.session.bus_path("unix:path=/run/user/1000/bus,guid=abc"), "/run/user/1000/bus")
-
-    def test_production_palette_hook_cannot_revive_legacy(self):
-        with patch.object(self.session, "legacy_pids") as pids, patch.object(self.session, "run") as run:
-            self.session.palette()
-            pids.assert_not_called()
-            run.assert_not_called()
+        self.session.atomic(self.session.RUNTIME / "session.json", json.dumps({"config": "/other/config", "shell": own}))
+        self.assertEqual(self.session.session(), {})
 
 
 @unittest.skipUnless(shutil.which("node"), "Node.js is not installed")

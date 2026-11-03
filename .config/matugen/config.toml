@@ -13,21 +13,6 @@ post_hook = '~/.config/matugen/hooks/reload-hyprland.sh'
 input_path = '~/.config/matugen/templates/colors.css'
 output_path = '~/.config/quickshell/colors.css'
 
-# Retained generated palettes for explicit legacy rollback, not active daemons.
-[templates.waybar]
-input_path = '~/.config/matugen/templates/colors.css'
-output_path = '~/.config/waybar/colors/colors.css'
-post_hook = '~/.config/quickshell/desktop.sh palette'
-
-[templates.rofi]
-input_path = '~/.config/matugen/templates/rofi-colors.css'
-output_path = '~/.config/rofi/colors/colors.rasi'
-
-[templates.swaync]
-input_path = '~/.config/matugen/templates/colors.css'
-output_path = '~/.config/swaync/colors/colors.css'
-post_hook = '~/.config/matugen/hooks/reload-swaync.sh'
-
 [templates.kitty]
 input_path = '~/.config/matugen/templates/kitty-colors.css'
 output_path = '~/.config/kitty/colors.conf'

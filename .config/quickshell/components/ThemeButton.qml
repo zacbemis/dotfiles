@@ -35,7 +35,7 @@ ToolButton {
             : root.baseColor)
         border.width: root.activeFocus ? (root.outlined ? 2 : 1) : root.outlined ? 1 : 0
         border.color: root.activeFocus || !root.outlined ? Theme.focusRing : Theme.foregroundFor(color, Theme.outlineVariant, 3)
-        // Rofi selections are immediate; SwayNC controls use CSS's 200ms ease.
+        // Picker selections are immediate; controls use CSS's 200ms ease.
         Behavior on color {
             enabled: !root.pickerStyle
             ColorAnimation { duration: Theme.controlDuration; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.cssEase }

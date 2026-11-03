@@ -147,7 +147,7 @@ Scope {
                     else:
                         self.fail((root / "log").read_text())
                     fixtures = []
-                    current = Path.home() / ".config/waybar/colors/colors.css"
+                    current = Path.home() / ".config/quickshell/colors.css"
                     if current.exists():
                         fixtures.append(("current wallpaper", current.read_text()))
                     seeds = ["#000000", "#111111", "#747474", "#757575", "#767676", "#777777", "#787878",

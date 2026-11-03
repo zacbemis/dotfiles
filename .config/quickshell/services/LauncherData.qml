@@ -67,14 +67,6 @@ Singleton {
             }
         }
     }
-    FileView {
-        id: rofiFile
-        path: (Quickshell.env("HOME") || "") + "/.cache/rofi3.druncache"
-        blockLoading: true
-        printErrors: false
-        watchChanges: true
-        onFileChanged: reload()
-    }
     FileView { id: usageFile; path: Quickshell.statePath("launcher-usage.json"); blockLoading: true; printErrors: false }
     FileView { id: pinsFile; path: Quickshell.statePath("launcher-pins.json"); blockLoading: true; printErrors: false }
     property var localUsage: {
@@ -86,17 +78,8 @@ Singleton {
         return Array.isArray(value) ? value.filter(id => typeof id === "string") : [];
     }
     function parse(text, fallback) { try { return JSON.parse(text || ""); } catch (error) { return fallback; } }
-    readonly property var rofiUsage: {
-        const scores = {};
-        for (const line of rofiFile.text().split("\n")) {
-            const match = line.trim().match(/^(\d+)\s+(.+)$/);
-            if (match) scores[match[2]] = Number(match[1]);
-        }
-        return scores;
-    }
     function usageFor(entry): int {
-        const id = String(entry.id || ""), base = id.endsWith(".desktop") ? id.slice(0, -8) : id;
-        return (localUsage[id] || 0) + (rofiUsage[id] || rofiUsage[base] || rofiUsage[base + ".desktop"] || 0);
+        return localUsage[String(entry.id || "")] || 0;
     }
     readonly property var apps: {
         const q = mode === "apps" ? normalized(query.trim()) : "";

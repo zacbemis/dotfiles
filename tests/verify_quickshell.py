@@ -166,7 +166,7 @@ def test_shell(backend, screenshots):
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         env["XDG_STATE_HOME"] = str(root / "state")
-        live_palette = Path.home() / ".config/waybar/colors/colors.css"
+        live_palette = Path.home() / ".config/quickshell/colors.css"
         base_css = live_palette.read_text() if live_palette.exists() else (
             "@define-color background #202124;\n@define-color primary #a8c7fa;\n"
             "@define-color on_surface #f1f3f4;\n@define-color tertiary #f4b8c8;\n")
@@ -325,7 +325,7 @@ def test_shell(backend, screenshots):
                     assert json.loads(ipc("wallpaper", "results")) == []
                     ipc("shell", "close")
                     assert json.loads(ipc("shell", "status"))["active"] == ""
-                    assert ipc("notifications", "preview", "Quickshell migration", "Native popups and history; SwayNC is still running.") == "true"
+                    assert ipc("notifications", "preview", "Quickshell migration", "Native popups and history; the daily desktop is untouched.") == "true"
                     wait_for(status, lambda state: state["count"] == 1 and state["popups"] == 1)
                     if screenshots:
                         time.sleep(0.5)

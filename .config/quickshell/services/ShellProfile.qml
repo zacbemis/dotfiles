@@ -38,10 +38,7 @@ Singleton {
     // The click handlers and comparison IPC use the same feature dispatcher.
     // No upstream shell commands, installer, wallpaper daemon or server runs.
     function activate(feature): bool {
-        if ((feature === "notifications" || feature === "dnd") && NotificationService.mode === "off") {
-            Quickshell.execDetached(["swaync-client", feature === "dnd" ? "-d" : "-t", "-sw"]);
-            return true;
-        }
+        if ((feature === "notifications" || feature === "dnd") && NotificationService.mode === "off") return false;
         if (feature === "controls") { ConnectivityService.toggleOverview(); return true; }
         if (["launcher", "wallpaper", "notifications", "settings"].includes(feature)) {
             UiState.toggle(feature);

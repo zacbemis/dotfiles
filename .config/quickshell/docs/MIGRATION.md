@@ -1,27 +1,27 @@
-# Daily Quickshell migration
+# Quickshell desktop session
 
-The active capabilities of the live Waybar/SwayNC/Rofi desktop were audited and
-ported before changing ownership. See [CAPABILITY-AUDIT.md](CAPABILITY-AUDIT.md)
-for the exact mapping, dormant settings, deliberate differences and test coverage.
-The config root is `.config/quickshell/`; it is now the daily desktop shell.
+Quickshell is the sole configured desktop UI. The previous Waybar/SwayNC/Rofi
+setup is preserved on `snapshot/pre-quickshell-cleanup-2026-11-03`, not as an
+in-session fallback. See [CAPABILITY-AUDIT.md](CAPABILITY-AUDIT.md) for the
+historical workflow mapping and deliberate differences.
 
 ## Startup and controls
 
 Both Hyprland config variants call `~/.config/quickshell/desktop.sh start`.
-Super+D opens/toggles the app launcher, Super+W the wallpaper picker and Super+R
-restarts the selected daily stack. Super+comma opens Settings. The
-[shared panel row](NAVIGATION.md) supports Alt+H/L across Apps/Run/Files/Wallpapers/
-Settings without resizing; notifications remain separate. Other desktop/hardware
-bindings are unchanged.
-The session helper serializes commands and supervises one daily Quickshell process;
-IPC always targets its recorded PID, not whichever comparison instance happens
-to exist. It retries crashes with a bounded backoff and checks PID start times.
+Super+D opens Apps/Run/Files, Super+W opens wallpapers, Super+R restarts
+Quickshell, and Super+comma opens Settings. The [shared panel row](NAVIGATION.md)
+supports Alt+H/L across Apps/Run/Files/Wallpapers/Settings. Notifications and quick
+controls remain separate. Other desktop/hardware bindings are unchanged.
+
+The session helper serializes commands and supervises one daily Quickshell process.
+IPC targets its recorded PID, not a comparison instance. Crash recovery is bounded,
+and signals check process ownership and PID start times.
 
 ```bash
 ~/.config/quickshell/desktop.sh status
 ~/.config/quickshell/desktop.sh start       # idempotent, no duplicate bars
-~/.config/quickshell/desktop.sh activate    # checked handoff / return from rollback
 ~/.config/quickshell/desktop.sh restart
+~/.config/quickshell/desktop.sh stop
 ~/.config/quickshell/desktop.sh launcher
 ~/.config/quickshell/desktop.sh run
 ~/.config/quickshell/desktop.sh files
@@ -31,53 +31,51 @@ to exist. It retries crashes with a bounded backoff and checks PID start times.
 ~/.config/quickshell/desktop.sh settings
 ```
 
-`activate` validates dependencies and refuses to evict an unrelated notification
-server. It gracefully stops same-session SwayNC, starts Quickshell, verifies its
-IPC **and ownership of org.freedesktop.Notifications**, and only then removes the
-old Waybar. Failure restores the legacy stack instead of leaving no desktop UI.
-Existing SwayNC in-memory history cannot be transferred across server ownership.
+`activate` remains an alias for checked startup. Startup verifies dependencies,
+IPC health and ownership of `org.freedesktop.Notifications`. It never stops or
+replaces another notification server; stop that server explicitly first.
+A failed startup reports the desktop log rather than launching an alternative UI.
+The old saved desktop-mode file is ignored, so it cannot redirect startup or keys.
 
-## Rollback
+State/logs: `~/.local/state/quickshell-desktop/`; PID/locks:
+`$XDG_RUNTIME_DIR/quickshell-desktop/`. Daily [component preferences](SETTINGS.md)
+survive restart; comparison preferences remain transient. Notification history and
+DND are in-memory and reset on process restart.
+
+## Removed components and recovery
+
+The legacy configs, install option, layer rules, launcher cache reader, notification
+client fallback and generated theme outputs have been removed. Existing packages
+and personal caches are not uninstalled or deleted. Hyprlock, Hypridle, awww,
+Pywal/Matugen and network/Bluetooth tray applets still support the desktop.
+
+To inspect the old configuration without changing the running desktop:
 
 ```bash
-~/.config/quickshell/desktop.sh legacy
+git show snapshot/pre-quickshell-cleanup-2026-11-03:.config/waybar/config.jsonc
 ```
 
-This stops only the recorded daily Quickshell instance, restarts the retained
-Waybar/SwayNC configs and persists legacy mode. The **same** Hyprland keybindings
-then dispatch to Rofi/the legacy reload path. Login startup and palette hooks
-honor the saved mode. Return with `desktop.sh activate`.
-
-State/logs: `~/.local/state/quickshell-desktop/`; PID/locks are in
-`$XDG_RUNTIME_DIR/quickshell-desktop/`. Desktop mode in the state directory is
-separate from the [component selector](SETTINGS.md)'s shell-scoped layout preferences.
-Daily bar/feature choices now survive restart; comparison choices remain transient
-and never read/write daily preferences. Configuration backups are under
+Restoring the old desktop is a deliberate Git/configuration deployment, not a
+`desktop.sh legacy` command. Stop Quickshell before starting a different notification
+server. Configuration backups from the original migration, if present, remain in
 `~/.local/state/dotfiles-quickshell-migration/`.
-
-Legacy packages are not uninstalled during migration. New installs use Quickshell
-by default; `INSTALL_LEGACY_UI=1 ./install.sh` also installs Waybar/Rofi/SwayNC for
-rollback. The old config files and generated rollback palettes remain available.
 
 ## Notifications, updates and themes
 
-The daily helper enables server mode and performs the old read-only login update
-check. Opening a panel does not run upgrades; terminal upgrades remain explicit.
-Restart/recovery suppresses repeated login checks. Update polling is demand-driven
-while the center/controls are open. Counts/errors never rewrite old SwayNC JSON.
+Daily startup enables notification server mode and a read-only login update check.
+Opening panels never runs upgrades; terminal upgrades remain explicit. Restart and
+crash recovery suppress repeated login checks. Update polling is demand-driven
+while the center/controls are open.
 
-Normal `run.sh` remains an isolated development runner (notifications off unless
-requested); `run.sh --preview` / `compare.sh` always preserve live desktop ownership.
-The comparison's double preview guard remains in both wrapper and service.
-Notification-server regressions run on a private D-Bus session.
+`run.sh` is an isolated development runner with notifications off by default.
+`run.sh --preview` / `compare.sh` use synthetic notifications without claiming the
+live D-Bus name. Notification-server tests use a private D-Bus session.
 
-Pywal/Matugen still set the wallpaper and generate all desktop app colors. They
-now publish `~/.config/quickshell/colors.css` for Quickshell to watch read-only.
-Legacy generated palettes remain for rollback, but hooks never auto-start retired
-daemons. Terminal/Neovim/GTK/Hyprlock color reloads and the exact-path wallpaper
-setter remain unchanged. Local D-Bus activation routes notification startup to
-the daily helper and masks automatic SwayNC control-center activation; explicit
-legacy mode starts SwayNC normally.
+Pywal links `~/.config/quickshell/colors.css` to
+`~/.cache/wal/colors-quickshell-custom.css`; Matugen writes the same canonical
+Quickshell palette. Quickshell watches it read-only, without restart hooks.
+Terminal/Neovim/GTK/Hyprlock colors and exact-path wallpaper application remain
+unchanged. Local D-Bus notification activation starts the daily session helper.
 
 ## Verification and limits
 
@@ -89,9 +87,8 @@ python3 tests/verify_quickshell_features.py
 python3 tests/verify_quickshell_settings.py
 ```
 
-Tests stop only their own instances; they do not stop the recorded daily shell.
-New regressions cover safe ownership handoff/rollback/refusal, inert Run/file
-indexes, terminal desktop entries, exact-path file opening, basic safe notification
-markup, muted Spotify, actual fonts, and image/touchpad carousel events.
-Multi-monitor hotplug and every hardware/device permutation still require manual
-validation. History is in-memory, not an unimplemented persistence promise.
+Tests stop only their own instances, never the recorded daily shell. Regressions
+cover notification-owner refusal, idempotent startup, stale-mode immunity, inert
+Run/file indexes, terminal desktop entries, exact-path opening and safe markup.
+Multi-monitor hotplug and every physical device permutation still need manual
+validation. On-disk notification history and inline replies are not implemented.

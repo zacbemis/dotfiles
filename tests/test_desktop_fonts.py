@@ -18,11 +18,6 @@ class DesktopFonts(unittest.TestCase):
             settings = configparser.ConfigParser()
             settings.read(ROOT / f".config/gtk-{version}/settings.ini")
             self.assertEqual(settings["Settings"]["gtk-font-name"], "Ubuntu Sans 11")
-        for file in ("theme.rasi", "config.rasi"):
-            self.assertIn('font: "Ubuntu Sans 10";', (ROOT / ".config/rofi" / file).read_text())
-        for file in ("notifications.css", "control_center.css"):
-            css = (ROOT / ".config/swaync/themes" / file).read_text()
-            self.assertIn('font-family: "Ubuntu Sans", "Symbols Nerd Font";', css)
 
     def test_fixed_width_and_installer_defaults(self):
         self.assertRegex((ROOT / ".config/kitty/kitty.conf").read_text(), r"(?m)^font_family UbuntuMono Nerd Font Mono$")

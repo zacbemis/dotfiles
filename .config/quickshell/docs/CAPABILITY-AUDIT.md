@@ -3,7 +3,9 @@
 Audited the repository **and live** settings before switching desktop ownership.
 The live SwayNC config differed only in its update-button label (the update script
 had replaced its symlink with a regular file). Its actual settings were backed up.
-This audits the configured desktop, not every optional upstream feature.
+This audits the pre-migration desktop, not every optional upstream feature.
+The old configuration is now archived on `snapshot/pre-quickshell-cleanup-2026-11-03`;
+Quickshell is the only configured desktop UI.
 
 ## Active capabilities
 
@@ -21,7 +23,7 @@ This audits the configured desktop, not every optional upstream feature.
 | SwayNC body rendering | Basic emphasis and clickable links | Sanitized b/i/u + HTTP(S)/mailto links; no remote/local image HTML loading; correct advertised capabilities |
 | SwayNC MPRIS | Track/player information and previous/play-pause/next | Notification center and quick settings; player cycling when multiple players exist; no album art (old image-size was 0) |
 | SwayNC update button + startup script | Pacman/AUR/Flatpak count, explicit terminal upgrade, refresh afterwards | Read-only login check in daily mode; same explicit `yay -Syu; flatpak update` action; no legacy-config mutation |
-| `rofi/config.rasi`, theme, launcher | Apps, icons, generic names/keywords/categories, normalized search, usage order | Shared desktop-entry controller; Rofi usage imported read-only, own usage/pins persisted |
+| `rofi/config.rasi`, theme, launcher | Apps, icons, generic names/keywords/categories, normalized search, usage order | Shared desktop-entry controller; own usage/pins persisted (the transitional Rofi cache reader is removed) |
 | Rofi terminal apps | Honor desktop `Terminal=true` and working directory | Explicit Kitty wrapper (Quickshell 0.3.1's native execute ignores Terminal); fixture terminal test |
 | Rofi Run mode | PATH commands, command entry, run history | Run tab / `>` prefix in every launcher; bounded read-only PATH index; executes only on activation; own last-25 history |
 | Rofi filebrowser | Directory navigation, folders-first/name sorting, opening files | Files tab / absolute or `~/` query; parent row; exact-path `xdg-open`, Unicode/newline/metacharacter fixture test |
@@ -29,7 +31,7 @@ This audits the configured desktop, not every optional upstream feature.
 | Rofi wallpaper scripts | Image discovery, thumbnails, select/apply | Shared JSON-safe scanner + list/gallery/carousel; exact-path existing setter; selection never applies; wheel/touchpad regression |
 | Hyprland autostart/bindings | Start UI; Super+D apps, Super+W wallpapers, Super+R reload | `desktop.sh start/launcher/wallpaper/restart`, both Lua and legacy .conf variants |
 | Multimedia, lock, screenshots, desktop apps | wpctl, mic mute, brightnessctl, playerctl, Hyprlock/idle, screenshots, Thunar/browser, wallpaper daemon | Commands intentionally unchanged; observed by native shell services, not reimplemented as competing daemons |
-| Pywal/Matugen | Wallpaper-derived desktop colors and app reloads | Same generators/templates/setter; canonical `quickshell/colors.css`; watched read-only; mode-aware rollback hooks |
+| Pywal/Matugen | Wallpaper-derived desktop colors and app reloads | Same generators/setter; canonical `quickshell/colors.css`; watched read-only without UI reload hooks |
 
 ## Not active in the old configuration
 
@@ -57,16 +59,15 @@ This audits the configured desktop, not every optional upstream feature.
 - Preview/comparison remains preview-only and never owns the live notification
   name, even while the daily Quickshell server is running.
 
-## Phase-out and rollback
+## Completed phase-out
 
-Waybar/SwayNC/Rofi are no longer default autostarts, keybinding targets or installer
-requirements. Their files/packages are retained as an **inactive rollback stack**,
-not deleted. No unrelated pre-existing working-tree changes are discarded.
-The local notification activation entry starts the selected desktop mode; a
-separate override prevents stray old SwayNC clients from auto-reviving that daemon.
+Waybar/SwayNC/Rofi configs, installer options, layer rules, theme outputs and
+in-session fallback commands have been removed. The local notification activation
+entry starts Quickshell. Existing installed packages and caches are not deleted;
+the complete previous repo is on `snapshot/pre-quickshell-cleanup-2026-11-03`.
 
-Pre-cutover live/repository backup:
+Pre-cutover live/repository backup, if still present:
 `~/.local/state/dotfiles-quickshell-migration/20261023-145811/` (with manifest).
-See [MIGRATION.md](MIGRATION.md) for the checked handoff, logs and one-command
-rollback. The wallpaper/color pipeline, terminal setup and non-UI desktop
+See [MIGRATION.md](MIGRATION.md) for session ownership, logs and deliberate Git-based
+recovery. The wallpaper/color pipeline, terminal setup and non-UI desktop
 keybindings remain in place.
