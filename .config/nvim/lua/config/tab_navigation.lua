@@ -83,9 +83,11 @@ function M.enter()
     return
   end
   target_win = api.nvim_get_current_win()
-  -- From the explorer, use an editing window without replacing the tree.
+  -- Prefer an editing window, but allow the full-window startup tree when
+  -- there are no editors yet (and possibly no file tabs at all).
   if vim.bo.buftype ~= "" then
-    target_win = nil
+    local tree_win = vim.bo.filetype == "NvimTree" and target_win or nil
+    target_win = tree_win
     for _, win in ipairs(api.nvim_tabpage_list_wins(0)) do
       if api.nvim_win_get_config(win).relative == "" and vim.bo[api.nvim_win_get_buf(win)].buftype == "" then
         target_win = win
@@ -117,7 +119,10 @@ function M.enter()
   end
   map("<C-k>", function() end, "Already in file tab bar")
   map("<leader>q", function()
-    in_target(function() vim.cmd.bdelete() end)
+    in_target(function()
+      -- An empty tab bar has no file to close; never delete the explorer.
+      if vim.bo.buftype == "" then vim.cmd.bdelete() end
+    end)
     if M.active then render() end
   end, "Close selected file tab")
   api.nvim_create_autocmd({ "VimResized", "ColorScheme" }, { group = group, callback = render })

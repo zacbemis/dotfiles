@@ -1,0 +1,58 @@
+{
+  "sources": [
+    {
+      "profile": "enzo",
+      "repository": "https://github.com/EnzoNotNice/quickshell-bar",
+      "commit": "68d721985be796d2d9a344f73a8b3ae5495a738d",
+      "license": "MIT",
+      "files": {
+        "Clock.qml": "d94b71686721549cd3728ad72387562656513069c7d73b68bd76dd151459c920",
+        "LICENSE": "75486ea0af9309140ca6e2c401d7e67bea8f4892344e5707f6394dc5e83dfc44",
+        "Mpris.qml": "ba6b055e28ef0979be369441945aa70667b06782d01051f9bfc554b8be2e6b65",
+        "README.md": "8e2fbb0e91faa2f985bc8566770467c631268e06b15529ad061459294adcf904",
+        "WindowTitle.qml": "8f4f92f5986b17b6e03571dc839959e9a66aa2bdfa143abf869bcb73e5d74d68",
+        "Workspaces.qml": "6f9f2489dadba4010bd483c52f178392253d6505b66fafa55f3200745b9b948c",
+        "shell.qml": "ad55f66734320d6f7db7cc5754219bf6b5588ef884435dab16be3cbc34c1555c"
+      }
+    },
+    {
+      "profile": "mm2103",
+      "repository": "https://github.com/MM-2103/quickshell-bar",
+      "commit": "d31a94da14648439da05457d57b1648da9b3b18e",
+      "license": "MIT",
+      "files": {
+        "Bar.qml": "1274dfd6bef722a639a6a84aba731c533f3f445b11b2b15bb1b5bbe683e701de",
+        "BarService.qml": "6a93c82c13665ad96c28b13fdd2fc651a00a2aa27564ec67219a66e3f72c569a",
+        "LICENSE": "087179facb77179238d2bf154ffeb0fb048bc2782e1814768647a92e0998fc3d",
+        "NOTICE": "00eb10027fc2a85e1157493c587ba398c9e07f3a44763205e7997317967871fc",
+        "README.md": "55c41deb9d46a0e5e774820e1d92ebf0e2b85aaf3f06c45af69c7c12c1c54a0c",
+        "Theme.qml": "321c273a37b83d49295625af200a12d618d8c43c7121b0434f3989544c2f0ecb",
+        "controlcenter/SlidersBlock.qml": "5989a4051fd222e238dbd41198992519d62c066bf6a1a727e05053b2726822a0",
+        "controlcenter/Tile.qml": "ec9fc3758e9bbe3c52881acd90d650095964b74a6336c587e03ecdc2fac47eef",
+        "controlcenter/TilesView.qml": "6ae929580d3d6a8c0fa2851eab2c8a384c502094cab6b46e38c74fda1dd0933f",
+        "launcher/Launcher.qml": "bdd68854c4089be140df9223ef0fe0a14fe8fe7542108df40d9522a89ab53327",
+        "launcher/LauncherService.qml": "86704d40848d4c4c0f4396379d3a0a50605e7ccc8f8deb78873563c64b9b42a8",
+        "launcher/emoji.json": "b174ae2aeb321b52f64adb9ff412f966a7f338839d780784dd15dcad702c2dd6",
+        "notifications/NotificationCard.qml": "d8cb42b6e7cedee73b3b70221818ee0c9b11a64006c7e94fc8d1324708c448e5",
+        "notifications/NotificationCenterPopup.qml": "e89859f1335ee2b67d6b34c41476b5aaa92741f863824189d1b06348792c9157",
+        "osd/Osd.qml": "0662d20973e22ddb361f5970c42ee1e939fb6063223d2c8717f27b62ab13552d",
+        "wallpaper/WallpaperPickerPopup.qml": "d6da3e975aedee543a4fdad8d4555042dc569ea37ecd8f1a2d2871e6f92784d3",
+        "workspaces/Workspaces.qml": "426a827e79e83b4b90ad44f1e8d74005629472c70a037d578a2761316ce79ee2"
+      }
+    },
+    {
+      "profile": "dux",
+      "repository": "https://github.com/duxlabs-dev/dux-shell",
+      "commit": "6f36e49c68a9ed7c86ab8d7cc9c5b3bd14270fd0",
+      "license": "MIT",
+      "files": {
+        "LICENSE": "4cee96286c5b7da9763a4694868bb1853b33bb1558821e0c609ad2eabd426bfa",
+        "README.md": "036618286a733aed741b336e7e0178e8437bbcdf634f15e90dfe0e4c98989624",
+        "quickshell/Modals/DLauncherV2/Components/LauncherTile.qml": "6d7ae180d3a092df5f29337bd7a7677cff464df5f26ddaed955600b28e37e03e",
+        "quickshell/Modules/DDash/WallpaperCarousel.qml": "a278771ef471747930bec67083eceb21be74062f1afe72c98a2a581d4d200c62",
+        "quickshell/Modules/Notifications/Center/HistoryNotificationList.qml": "cf53e447de96d0cae666436e3779eb5f37a0974c3c2f7ef4a5b73f5733dfc793",
+        "quickshell/Modules/Notifications/Center/NotificationCard.qml": "54fdf251f5bfb2e36a567c3288827f87c0e8e9633cc8ec94dea25d88726ae98d"
+      }
+    }
+  ]
+}

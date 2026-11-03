@@ -1,0 +1,5 @@
+[D-BUS Service]
+# Do not auto-revive SwayNC from a stray legacy client in the daily QS session.
+# Explicit rollback starts SwayNC normally and it claims this name itself.
+Name=org.erikreider.swaync.cc
+Exec=/usr/bin/false

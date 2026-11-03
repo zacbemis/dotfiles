@@ -9,21 +9,40 @@ Dynamic colorschemes via [pywal](https://github.com/eendroroy/pywal16) and [matu
 | Config | Description |
 |---|---|
 | **hypr** | Hyprland (compositor), Hyprlock (lockscreen), Hypridle (idle daemon), keybindings, window rules, wallpaper scripts |
-| **waybar** | Top bar with workspaces, clock, battery, brightness, volume, notification indicator |
-| **rofi** | App launcher + wallpaper picker with thumbnail previews |
-| **swaync** | Notification center with Material Design theming, update checker widget |
+| **quickshell** | Daily bar, tray, notifications, Apps/Run/Files and wallpaper pickers, media/quick settings, persistent component selector; checked startup and rollback |
+| **waybar** | Inactive rollback bar configuration |
+| **rofi** | Inactive rollback launcher/filebrowser/wallpaper configuration |
+| **swaync** | Inactive rollback notification/update-widget configuration |
 | **kitty** | Terminal emulator config |
 | **herdr** | Terminal workspace manager and keybindings, inheriting wallpaper colors from Kitty |
 | **nvim** | Standalone Neovim setup with LSP, Treesitter, Git tools, and live wallpaper-derived colors |
 | **wal** | Pywal templates for all apps + post-hook script that symlinks generated colors everywhere |
 | **matugen** | Material You color generation templates and reload hooks |
-| **gtk-3.0 / gtk-4.0** | GTK theme settings (adw-gtk3-dark, Papirus icons, Bibata cursor) |
+| **gtk-3.0 / gtk-4.0** | GTK theme settings (adw-gtk3-dark, Ubuntu Sans, Papirus icons, Bibata cursor) |
+| **fontconfig** | Ubuntu Sans UI defaults, Ubuntu Mono fixed-width defaults and Nerd glyph fallback |
 | **Thunar** | File manager custom actions and keybindings |
 | **rofi wallpaper** | Script-mode wallpaper selector with thumbnail generation |
 | **.zshrc** | Zsh config with Oh My Zsh, Powerlevel10k, vi mode, aliases |
 | **.p10k.zsh** | Powerlevel10k prompt configuration |
 | **.gitconfig** | Git user settings |
 | **pi** | Pi coding agent settings, multi-subscription routing, OpenAI web search, and marketplace extensions |
+
+## Daily desktop / rollback
+
+Quickshell replaces the configured Waybar/SwayNC/Rofi workflows. Super+D opens
+Apps/Run/Files, Super+W opens wallpapers, and Super+R reloads the daily shell.
+The old configurations/packages remain available, but do not autostart.
+
+```bash
+~/.config/quickshell/desktop.sh status
+~/.config/quickshell/desktop.sh activate  # checked handoff / switch back to QS
+~/.config/quickshell/desktop.sh legacy    # restore the old stack
+```
+
+[Capability audit](.config/quickshell/docs/CAPABILITY-AUDIT.md) ·
+[Migration, ownership checks, logs and backups](.config/quickshell/docs/MIGRATION.md).
+New installs use Quickshell; `INSTALL_LEGACY_UI=1 ./install.sh` also installs the
+optional rollback apps. No package is automatically removed.
 
 ## How colors work
 
@@ -33,14 +52,18 @@ Two color systems are set up — use whichever you prefer:
 - **matugen** (`matugen image <image>`) generates Material You colors and writes them directly to each app's color file
 
 The wallpaper scripts at `~/.config/hypr/scripts/` handle everything: set wallpaper via awww, generate colors, reload apps.
+Quickshell watches `~/.config/quickshell/colors.css`; retained legacy palettes
+are generated only for rollback, and mode-aware hooks never revive retired daemons.
 
 Herdr uses its built-in `terminal` theme to inherit Kitty's ANSI palette, so both
 Pywal and Matugen work without a separate Herdr color template. Its bars, inactive
 tabs, and sidebar inherit the normal terminal background. Selected tabs and
-sidebar rows use Neovim's darker explorer shade (Kitty background darkened by 16%).
-`panel_bg` and `surface_dim` stay `reset` so selected tab labels inherit the host
-foreground. Active tabs share Herdr's global accent token, so other UI accents
-also use that darker shade.
+sidebar rows use Kitty's wallpaper accent (`color4`), tinted for at least 2.2:1
+contrast against the background and 4.5:1 contrast with label text. Subdued accents
+are adjusted to stay visible; palettes without `color4` fall back to the selection
+color or foreground. `panel_bg` and `surface_dim` stay `reset` so selected tab
+labels inherit the host foreground. Active tabs share Herdr's global accent
+token, so other UI accents also use that tint.
 After Kitty reloads, `~/.config/herdr/reload-colors.sh` runs `sync-colors.py` to
 update only the managed theme tokens, reloads Herdr's config, and signals
 attached clients to refresh their palette. Running panes are not restarted.
@@ -100,7 +123,18 @@ These are created at runtime by pywal/matugen and intentionally excluded:
 - **Monitor config** is in `hypr/hyprmodules/monitors.lua` — you will likely need to change this for your display. Legacy `hyprland.conf` / `monitors.conf` remain as rollback.
 - **.oh-my-zsh** is not tracked — it's a git repo managed by `omz update`
 - **Pi auth, model cache, and sessions** are not tracked — settings, package declarations, multi-subscription routing, and web-search provider config are tracked
-- **Fonts used**: SF Pro Display, Mononoki Nerd Font, JetBrainsMono Nerd Font
+- **Fonts used**: regular Ubuntu Sans for GTK, Rofi and SwayNC;
+  SF Pro Display throughout Quickshell (bold headings/bars, regular other UI);
+  Ubuntu Mono (`UbuntuMono Nerd Font Mono`) for Kitty, terminal editors/tools,
+  generic monospace and code-font requests. The Nerd patch preserves prompt and
+  Neovim icons. UI pictograms use Symbols Nerd Font rather than compressed terminal
+  glyphs. SF Pro Display bar/lockscreen text and existing JetBrains Nerd
+  bar glyphs remain separate. Normal text and terminal defaults are regular
+  weight; bold is reserved for headings, bars and intentional emphasis.
+- **Font dependencies**: `ttf-ubuntu-mono-nerd` (official) and `ttf-ubuntu-sans`
+  (AUR); the older `ttf-ubuntu-font-family` does **not** provide Ubuntu Sans.
+  `install.sh` installs both, stows Fontconfig aliases and sets GTK/portal UI and
+  monospace font preferences. Restart existing apps to pick up font changes.
 
 ## License
 

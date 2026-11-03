@@ -8,16 +8,11 @@ img="${1:-}"
 ln -sf "$img" "$HOME/.config/hypr/current_wallpaper"
 
 # 2) Run matugen (handles awww + regenerates themes)
-# Background it so rofi never waits.
+# Background it so the wallpaper picker never waits.
 (matugen image "$img" >/dev/null 2>&1) &
 disown || true
 
-# 3) Optional: ensure swaync picks up CSS (config + style)
-# (remove if matugen already triggers this)
-(
-  swaync-client -R >/dev/null 2>&1
-  swaync-client -rs >/dev/null 2>&1
-) &
-disown || true
+# Quickshell watches its palette. Matugen's mode-aware hooks handle an explicit
+# legacy rollback; never auto-activate SwayNC after the daily-shell cutover.
 
 exit 0

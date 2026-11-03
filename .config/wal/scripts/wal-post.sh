@@ -3,7 +3,8 @@ set -euo pipefail
 
 CACHE="$HOME/.cache/wal"
 
-mkdir -p "$HOME/.config/hypr/colors" \
+mkdir -p "$HOME/.config/quickshell" \
+         "$HOME/.config/hypr/colors" \
          "$HOME/.config/waybar/colors" \
          "$HOME/.config/rofi/colors" \
          "$HOME/.config/swaync/colors" \
@@ -12,6 +13,7 @@ mkdir -p "$HOME/.config/hypr/colors" \
          "$HOME/.config/gtk-4.0"
 
 ln -sf "$CACHE/colors-hyprland-custom.conf" "$HOME/.config/hypr/colors/colors.conf"
+ln -sf "$CACHE/colors-waybar-custom.css"    "$HOME/.config/quickshell/colors.css"
 ln -sf "$CACHE/colors-waybar-custom.css"    "$HOME/.config/waybar/colors/colors.css"
 ln -sf "$CACHE/colors-rofi-custom.rasi"     "$HOME/.config/rofi/colors/colors.rasi"
 ln -sf "$CACHE/colors-swaync-custom.css"    "$HOME/.config/swaync/colors/colors.css"
@@ -29,12 +31,19 @@ printf '%s\n' pywal > "$STATE/color-generator"
 # Reload only after the generated palette is linked into place.
 hyprctl reload >/dev/null 2>&1 || true
 
-pkill -SIGUSR2 waybar 2>/dev/null || true
+if [[ -x "$HOME/.config/quickshell/desktop.sh" ]]; then
+    "$HOME/.config/quickshell/desktop.sh" palette || true
+else
+    pkill -SIGUSR2 waybar 2>/dev/null || true
+    if pgrep -x swaync >/dev/null 2>&1; then
+        swaync-client -R >/dev/null 2>&1 || true
+        swaync-client -rs >/dev/null 2>&1 || true
+    fi
+fi
 pkill -USR1 -x kitty 2>/dev/null || true
 if [[ -x "$HOME/.config/herdr/reload-colors.sh" ]]; then
     "$HOME/.config/herdr/reload-colors.sh" || true
 fi
-swaync-client -R  >/dev/null 2>&1 || true
-swaync-client -rs >/dev/null 2>&1 || true
+# Legacy reloads are handled only by desktop.sh's explicit rollback mode.
 gsettings set org.gnome.desktop.interface gtk-theme "" 2>/dev/null || true
 gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-dark" 2>/dev/null || true

@@ -9,8 +9,8 @@
   color:            @text;
 
   font-size: 15px;
-  font-family: "Mononoki Nerd Font Propo";
-  font-weight: bold;
+  font-family: "Ubuntu Sans", "Symbols Nerd Font";
+  font-weight: normal;
   transition: 200ms;
 
 }

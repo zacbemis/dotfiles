@@ -75,7 +75,7 @@ configuration {
 
 	/*---------- Misc setting ----------*/
 	terminal: "rofi-sensible-terminal";
-	font: "Propo";
+	font: "Ubuntu Sans 10";
 	sort: false;
 	threads: 0;
 	click-to-exit: true;

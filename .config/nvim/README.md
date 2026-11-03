@@ -144,7 +144,9 @@ not Neovim tabpages (which represent separate window layouts).
 bar when there is no window above. This is a real focusable window: `h` / `l`
 switch files in the editing split you came from, leaving other splits alone.
 `Enter`, `Esc`, or `Ctrl-j` close the overlay and return to that split.
-`Ctrl-k` while in the overlay stays there.
+`Ctrl-k` while in the overlay stays there. The startup full-window explorer
+can focus the bar too, even before any files are open; returning goes back to
+the explorer, and `Space q` does nothing when there is no file to close.
 `Space q` closes the selected file. Moving to another window dismisses the
 overlay too. The underlying native tab bar stays unchanged.
 
@@ -252,6 +254,15 @@ acceptance) and can expand an empty bracket pair onto multiple lines.
 nvim-ts-autotag automatically closes HTML/XML/JSX/TSX tags and keeps matching
 opening/closing tag names synchronized when renaming. The corresponding parser
 must be installed first.
+
+## Brief (`.brf`)
+
+Brief files are detected as `brief` and use local regex-based highlighting for
+keywords, types, function names, `:symbol` tags, numbers, strings, characters,
+and comments. Capitalized names are treated as nominal types. This uses the
+existing syntax palette; no plugin, parser, or language server is required.
+Native commenting (`gc`) uses `//`. Rules live in `syntax/brief.vim`, with
+file detection in `ftdetect/brief.lua` and comment settings in `ftplugin/brief.vim`.
 
 ## Language support and completion
 

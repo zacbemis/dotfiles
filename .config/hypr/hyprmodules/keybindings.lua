@@ -5,7 +5,7 @@
 local mainMod = "SUPER"
 local terminal = "kitty"
 local fileManager = "thunar"
-local menu = "rofi -show drun" -- retained from the legacy config
+local menu = "~/.config/quickshell/desktop.sh launcher"
 local browser = "helium-browser"
 
 hl.bind(mainMod .. " + RETURN", hl.dsp.exec_cmd(terminal))
@@ -13,12 +13,13 @@ hl.bind(mainMod .. " + Q", hl.dsp.window.close())
 hl.bind(mainMod .. " + M", hl.dsp.exit())
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager))
 hl.bind(mainMod .. " + F", hl.dsp.window.float({ action = "toggle" }))
-hl.bind(mainMod .. " + D", hl.dsp.exec_cmd("~/.config/rofi/scripts/launcher.sh"))
+hl.bind(mainMod .. " + D", hl.dsp.exec_cmd(menu))
 hl.bind(mainMod .. " + T", hl.dsp.window.pseudo()) -- dwindle
 hl.bind(mainMod .. " + X", hl.dsp.layout("togglesplit")) -- dwindle
 hl.bind(mainMod .. " + B", hl.dsp.exec_cmd(browser))
-hl.bind(mainMod .. " + R", hl.dsp.exec_cmd("~/.config/waybar/scripts/launch.sh"))
-hl.bind(mainMod .. " + W", hl.dsp.exec_cmd("~/.config/rofi/scripts/launcher-wallpaper.sh"))
+hl.bind(mainMod .. " + R", hl.dsp.exec_cmd("~/.config/quickshell/desktop.sh restart"))
+hl.bind(mainMod .. " + W", hl.dsp.exec_cmd("~/.config/quickshell/desktop.sh wallpaper"))
+hl.bind(mainMod .. " + comma", hl.dsp.exec_cmd("~/.config/quickshell/desktop.sh settings")) -- customize shell
 hl.bind(mainMod .. " + O", hl.dsp.exec_cmd("pidof hyprlock || hyprlock"))
 
 -- Move focus with mainMod + vim keys

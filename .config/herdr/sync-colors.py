@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep Herdr on the terminal background with darker wallpaper-derived selections."""
+"""Keep Herdr on the terminal background with visible wallpaper-accent selections."""
 
 import argparse
 import math
@@ -13,21 +13,52 @@ BEGIN = "# BEGIN managed wallpaper surfaces"
 END = "# END managed wallpaper surfaces"
 
 
+def luminance(rgb):
+    channels = [c / 255 for c in rgb]
+    linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+              for c in channels]
+    return sum(c * weight for c, weight in zip(linear, (0.2126, 0.7152, 0.0722)))
+
+
+def contrast(first, second):
+    light, dark = sorted((luminance(first), luminance(second)), reverse=True)
+    return (light + 0.05) / (dark + 0.05)
+
+
+def selection_color(palette):
+    background = palette["background"]
+    fallback = (255, 255, 255) if luminance(background) < 0.179 else (0, 0, 0)
+    foreground = palette.get("foreground", fallback)
+    # Matugen puts its wallpaper primary in color4; Pywal derives it from the image.
+    accent = palette.get("color4", palette.get("selection_background", foreground))
+    endpoint = (255, 255, 255) if luminance(foreground) > luminance(background) else (0, 0, 0)
+    # Tint the terminal background first. If the accent is too subdued, brighten
+    # or darken that same hue until the selection is visible and text is readable.
+    for start, end in ((background, accent), (accent, endpoint)):
+        for step in range(101):
+            rgb = tuple(math.floor(a + (b - a) * step / 100 + 0.5)
+                        for a, b in zip(start, end))
+            if contrast(rgb, background) >= 2.2 and contrast(rgb, foreground) >= 4.5:
+                return "#" + "".join(f"{c:02x}" for c in rgb)
+    raise ValueError("Palette cannot provide readable selections; keeping existing colors")
+
+
 def sync_colors(config_path: Path, palette_path: Path) -> bool:
-    palette = palette_path.read_text()
-    match = re.search(r"^\s*background\s+(#[0-9a-fA-F]{6})\s*(?:#.*)?$", palette, re.M)
-    if not match:
+    palette = {
+        key: tuple(int(value[i:i + 2], 16) for i in (1, 3, 5))
+        for key, value in re.findall(
+            r"^\s*(\w+)\s+(#[0-9a-fA-F]{6})\s*(?:#.*)?$", palette_path.read_text(), re.M
+        )
+    }
+    if "background" not in palette:
         raise ValueError(f"No valid background in {palette_path}; keeping existing colors")
-    base = match[1].lower()
-    # Same rounded 16% darkening as nvim's wallpaper.lua crust surface.
-    channels = [int(base[i:i + 2], 16) for i in (1, 3, 5)]
-    surface = "#" + "".join(f"{math.floor(c * 0.84 + 0.5):02x}" for c in channels)
+    surface = selection_color(palette)
     colors = {
         "panel_bg": "reset",
         "sidebar_bg": "reset",
         "surface0": "reset",
         # Herdr uses this as the active tab foreground when panel_bg is reset.
-        # Reset both to inherit the host foreground, not dark text on a dark tab.
+        # Reset both to inherit the host foreground, checked against the tint.
         "surface_dim": "reset",
         "active_row_bg": surface,
         "selection_bg": surface,

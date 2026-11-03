@@ -3,4 +3,5 @@
 LICENSE
 README\.md
 install\.sh
+^/tests
 \.stow-local-ignore

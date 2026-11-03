@@ -58,7 +58,7 @@ hl.window_rule({
 -- Visual: opacity for all windows (active/inactive)
 hl.window_rule({
     match = { class = ".*" },
-    opacity = "0.95 0.95",
+    opacity = "0.98 0.98",
 })
 
 -- swaync: remove borders
@@ -71,7 +71,19 @@ hl.window_rule({
 ---- LAYER RULES ----
 -------------------
 
--- waybar
+-- Daily Quickshell surfaces (the retained rules below are for rollback).
+hl.layer_rule({
+    match = { namespace = "^quickshell-(bar|compare-.*|dev-.*)$" },
+    blur = true,
+    ignore_alpha = 0.5,
+})
+hl.layer_rule({
+    name = "quickshell-card-motion",
+    match = { namespace = "^quickshell-dev-(launcher|wallpaper|notifications|controls|settings|panel)$" },
+    no_anim = true,
+})
+
+-- Legacy waybar
 hl.layer_rule({
     match = { namespace = "^(waybar)$" },
     blur = true,

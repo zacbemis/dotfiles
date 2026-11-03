@@ -13,7 +13,7 @@ configuration {
 @import "colors/colors.rasi"
 
 * {
-    font: "Mononoki Nerd Font Propo Bold 10";
+    font: "Ubuntu Sans 10";
 
     /* Theme-local aliases referencing matugen palette (hyphen names!) */
     border-colour:               var(outline);

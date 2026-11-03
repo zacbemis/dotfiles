@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Keep bars/inactive tabs/sidebar on the normal terminal background, with
-# selected tabs/sidebar rows on the darker Neovim explorer shade.
+# selected tabs/sidebar rows on a contrasting wallpaper-accent tint.
 python3 "$(dirname -- "${BASH_SOURCE[0]}")/sync-colors.py" || true
 
 # SIGWINCH makes attached clients re-query Kitty's ANSI palette, also refreshing

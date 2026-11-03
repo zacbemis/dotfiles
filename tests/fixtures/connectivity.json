@@ -1,0 +1,39 @@
+{
+  "wifi": {
+    "available": true, "enabled": true, "hardware": true, "selected": "wifi0", "phase": "connected", "failure": null,
+    "profiles": [
+      {"id": "33333333-3333-4333-8333-333333333333", "profile": "33333333-3333-4333-8333-333333333333", "name": "Home Wi-Fi", "ssid": "Home Wi-Fi", "available": true, "connected": true, "autoconnect": true},
+      {"id": "44444444-4444-4444-8444-444444444444", "profile": "44444444-4444-4444-8444-444444444444", "name": "Out-of-range network", "ssid": "Old network", "available": false, "connected": false, "autoconnect": false}
+    ],
+    "adapters": [{"id": "wifi0", "name": "Fixture Wi-Fi"}],
+    "networks": [
+      {"id": "ap1", "name": "Home Wi-Fi", "strength": 88, "security": "wpa", "saved": true, "profile": "33333333-3333-4333-8333-333333333333", "connected": true, "connecting": false, "advanced": false},
+      {"id": "ap2", "name": "Café: ; & snow 雪", "strength": 62, "security": "wpa", "saved": false, "profile": "", "connected": false, "connecting": false, "advanced": false},
+      {"id": "ap3", "name": "Guest", "strength": 40, "security": "open", "saved": false, "profile": "", "connected": false, "connecting": false, "advanced": false},
+      {"id": "ap4", "name": "Enterprise", "strength": 75, "security": "enterprise", "saved": false, "profile": "", "connected": false, "connecting": false, "advanced": true}
+    ]
+  },
+  "bluetooth": {
+    "available": true, "enabled": true, "discovering": false, "ownDiscovery": false, "selected": "bt0",
+    "adapters": [{"id": "bt0", "name": "Fixture Bluetooth", "enabled": true, "discovering": false}],
+    "devices": [
+      {"id": "bt1", "name": "Headphones", "address": "00:00:00:00:00:01", "icon": "audio-headphones", "paired": true, "connected": true, "trusted": true, "blocked": false, "battery": 76},
+      {"id": "bt2", "name": "Keyboard", "address": "00:00:00:00:00:02", "icon": "input-keyboard", "paired": false, "connected": false, "trusted": false, "blocked": false, "battery": -1},
+      {"id": "bt3", "name": "Blocked device", "address": "00:00:00:00:00:03", "icon": "bluetooth", "paired": false, "connected": false, "trusted": false, "blocked": true, "battery": -1}
+    ]
+  },
+  "internet": {"state": "portal", "uri": "http://portal.fixture.test/check", "checking": false},
+  "audio": {
+    "outputs": [{"id": "out-speakers", "name": "Built-in speakers", "selected": true, "volume": 50, "muted": false}, {"id": "out-headphones", "name": "Fixture headphones", "selected": false, "volume": 65, "muted": false}],
+    "inputs": [{"id": "in-builtin", "name": "Built-in microphone", "selected": true, "volume": 70, "muted": false}, {"id": "in-headset", "name": "Fixture headset microphone", "selected": false, "volume": 60, "muted": false}],
+    "streams": [{"id": "app-browser", "key": "browser-serial-1", "name": "Browser", "volume": 80, "muted": false}, {"id": "app-player", "key": "player-serial-1", "name": "Music player", "volume": 45, "muted": false}],
+    "cards": [{"id": "fixture-card", "key": "bluez_card.fixture", "name": "Fixture headphones", "profiles": [{"id": "a2dp-sink", "name": "High quality", "selected": true}, {"id": "headset-head-unit", "name": "Headset + microphone", "selected": false}]}]
+  },
+  "vpn": {
+    "available": true,
+    "profiles": [
+      {"id": "11111111-1111-4111-8111-111111111111", "name": "Fixture VPN", "type": "vpn", "connected": false, "connecting": false, "active": false},
+      {"id": "22222222-2222-4222-8222-222222222222", "name": "Fixture WireGuard", "type": "wireguard", "connected": true, "connecting": false, "active": true}
+    ]
+  }
+}

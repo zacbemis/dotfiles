@@ -30,10 +30,15 @@ OFFICIAL=(
     hypridle
     xdg-desktop-portal-hyprland
 
-    # bar, launcher, notifications
-    waybar
-    rofi
-    swaync
+    # daily bar, launcher, notifications (legacy stack is opt-in below)
+    quickshell
+    python
+    python-gobject
+    gtk3
+    qt6-svg
+    qt6-imageformats
+    xdg-utils
+    pacman-contrib
 
     # terminal & shell
     kitty
@@ -63,6 +68,7 @@ OFFICIAL=(
     pipewire
     pipewire-pulse
     wireplumber
+    libpulse # pactl: Bluetooth card profiles absent from Quickshell's native API
 
     # brightness & media
     brightnessctl
@@ -70,7 +76,11 @@ OFFICIAL=(
 
     # networking & bluetooth
     networkmanager
+    libnm
     network-manager-applet
+    nm-connection-editor
+    bluez
+    bluez-utils
     blueman
 
     # night light
@@ -83,13 +93,20 @@ OFFICIAL=(
     # node version manager
     nvm
 
-    # flatpak (for swaync update widget)
+    # flatpak (for the Quickshell update widget)
     flatpak
 
     # fonts
     ttf-jetbrains-mono-nerd
-    ttf-mononoki-nerd
+    ttf-ubuntu-mono-nerd
+    ttf-nerd-fonts-symbols
 )
+
+# Retain a runnable rollback stack when explicitly requested; do not uninstall
+# existing packages during migration.
+if [[ "${INSTALL_LEGACY_UI:-0}" == 1 ]]; then
+    OFFICIAL+=(waybar rofi swaync)
+fi
 
 # ── AUR packages ─────────────────────────────────────────────────────
 AUR=(
@@ -98,6 +115,7 @@ AUR=(
     bibata-cursor-theme
     adw-gtk-theme
     apple-fonts
+    ttf-ubuntu-sans
 )
 
 info "Installing official packages..."
@@ -124,7 +142,8 @@ fi
 info "Stowing dotfiles..."
 
 # create dirs that receive runtime-generated color files
-mkdir -p "$HOME/.config/hypr/colors" \
+mkdir -p "$HOME/.config/quickshell" \
+         "$HOME/.config/hypr/colors" \
          "$HOME/.config/waybar/colors" \
          "$HOME/.config/rofi/colors" \
          "$HOME/.config/swaync/colors" \
@@ -135,6 +154,15 @@ mkdir -p "$HOME/.config/hypr/colors" \
 
 cd "$DOTFILES_DIR"
 stow --no-folding --adopt .
+
+# GTK/portal settings also need the proportional UI / fixed-width editor split.
+# Fontconfig aliases (stowed above) cover other apps and Nerd glyph fallback.
+if command -v gsettings &>/dev/null && \
+        gsettings list-schemas | grep -qx org.gnome.desktop.interface; then
+    info "Applying Ubuntu UI and monospace fonts..."
+    gsettings set org.gnome.desktop.interface font-name 'Ubuntu Sans 11'
+    gsettings set org.gnome.desktop.interface monospace-font-name 'UbuntuMono Nerd Font Mono 11'
+fi
 
 # ── default shell ────────────────────────────────────────────────────
 if [[ "$SHELL" != */zsh ]]; then
@@ -160,5 +188,7 @@ info "Done! Next steps:"
 echo "  1. Log out and log into a Hyprland session"
 echo "  2. Set a wallpaper:  ~/.config/hypr/scripts/set-wallpaper.sh ~/Pictures/wallpapers/something.png"
 echo "  3. Edit monitor config if needed:  ~/.config/hypr/hyprmodules/monitors.lua"
+echo "  4. For a live-session handoff: ~/.config/quickshell/desktop.sh activate"
+echo "     Rollback: ~/.config/quickshell/desktop.sh legacy (requires legacy packages)"
 echo ""
 warn "The monitor is set to 2880x1800@60 — change this in monitors.lua for your display."

@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "1.1.0",
+  "lastChangelogVersion": "1.5.0",
   "theme": "dark",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-6.1-sol",
@@ -9,10 +9,12 @@
     "npm:pi-web-access",
     "npm:pi-vim",
     "git:github.com/ryan-brosas/pi-multi-pass@1cecf9ad4f43d35b871ee0683768890b1dd6d2de",
-    "npm:pi-antigravity-acp-provider",
-    "npm:pi-cursor-acp-provider"
+    "npm:pi-antigravity-acp-provider"
   ],
   "terminal": {
     "showImages": true
+  },
+  "extensionChangelogVersions": {
+    "{\"source\":\"npm:pi-web-access\",\"scope\":\"user\"}": "0.46.0"
   }
 }
