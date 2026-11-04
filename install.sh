@@ -144,7 +144,12 @@ mkdir -p "$HOME/.config/quickshell" \
          "$HOME/.config/gtk-4.0"
 
 cd "$DOTFILES_DIR"
-stow --no-folding --adopt .
+if ! stow --no-folding --target="$HOME" .; then
+    error "Stow found conflicting files or links; no existing settings were adopted."
+    warn "Back up and resolve the reported conflicts, then rerun Stow."
+    warn "For reviewed developer-tool files, use: python3 scripts/tool-settings.py link"
+    exit 1
+fi
 
 # GTK/portal settings also need the proportional UI / fixed-width editor split.
 # Fontconfig aliases (stowed above) cover other apps and Nerd glyph fallback.

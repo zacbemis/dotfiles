@@ -113,8 +113,16 @@ If you already have dependencies and just want to link the configs:
 
 ```bash
 cd ~/dotfiles
-stow --no-folding .
+stow --simulate --verbose --no-folding --target="$HOME" .
+stow --no-folding --target="$HOME" .
 ```
+
+Use relative links so Stow can recognize its own files. Existing folded directory
+links (such as Neovim and Quickshell) are also supported; `--no-folding` prevents
+new folding rather than forcing those directories to be expanded. Do not use
+`--adopt` to silence conflicts: it imports local files into the repository. Back up
+and review conflicts first, particularly in tool directories that contain private
+state. The installer now stops on conflicts instead of adopting files silently.
 
 Tests, repository maintenance scripts, filtered tool snapshots and Python bytecode
 are excluded by `.stow-local-ignore`; source config scripts and intentional skills
@@ -125,7 +133,7 @@ To unlink:
 
 ```bash
 cd ~/dotfiles
-stow --no-folding -D .
+stow --no-folding --target="$HOME" -D .
 ```
 
 ## Runtime-generated files (not tracked)

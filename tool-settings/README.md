@@ -38,8 +38,11 @@ python3 scripts/tool-settings.py link
 ```
 
 `status` also checks whether the filtered preference snapshots match the current
-local settings, without printing private values. `link` installs only the manifest's
-leaf files, backing up any existing files under
+local settings, without printing private values. `absolute` means an otherwise
+correct link needs normalization for Stow. `link` creates relative Stow-compatible
+links, normalizes old absolute links and leaves files reached through an existing
+Stow-folded directory alone. It installs only the manifest's leaf files, backing up
+any existing files under
 `${XDG_STATE_HOME:-~/.local/state}/dotfiles-tool-settings/`. Unlisted sibling files,
 including credentials and sessions, are untouched. Standard Stow also deploys these
 source files on a fresh machine; this scoped helper avoids broad `--adopt` operations

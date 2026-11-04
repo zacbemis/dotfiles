@@ -24,10 +24,12 @@ python3 -m unittest discover -s tests -v
   input/environment cleanup, generated palette recovery and safe lockscreen parsing.
 - `test_hyprland_windows.py`: executes the actual Lua window rules against modal,
   file/portal, browser-popup and normal-window fixtures, without a compositor.
-- `test_stow.py`: temporary-home deployment excludes bytecode, tests and maintenance
-  scripts, while keeping source configs and skills. Also guards removed artifacts.
+- `test_stow.py`: deploys the entire tracked checkout into a temporary HOME, checks
+  idempotent Stow/unstow/restow and private-sibling preservation, and excludes
+  bytecode, local agent state, tests and maintenance files. Also guards removed artifacts.
 - `test_tool_settings.py`: tracked tool config parsing, private-state ignore rules,
-  filtered preference capture/restore, credential guards and scoped file linking.
+  filtered preference capture/restore, credential guards, relative Stow-compatible
+  links and safe handling of existing folded directory links.
 - Other `test_*.py`: idle brightness, fonts, terminal colors and editor configuration.
 
 ## Desktop smoke tests

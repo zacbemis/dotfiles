@@ -190,11 +190,42 @@ class PreferenceBoundaries(unittest.TestCase):
         tools.link(self.root, self.home, self.backups)
         path = self.home / ".claude/settings.json"
         self.assertTrue(path.is_symlink())
+        self.assertFalse(os.path.isabs(os.readlink(path)), "Stow must recognize the relative link")
         self.assertEqual(path.resolve(), source)
         self.assertEqual(json.loads((self.backups / ".claude/settings.json").read_text()), {"model": "previous"})
         self.assertEqual(private.read_text(), "local-only")
         tools.link(self.root, self.home, self.backups)
         self.assertEqual(json.loads((self.backups / ".claude/settings.json").read_text()), {"model": "previous"})
+
+    def test_existing_absolute_link_is_normalized_for_stow(self):
+        self.put(self.root, "tool-settings/manifest.json", {"files": [".claude/settings.json"]})
+        source = self.put(self.root, ".claude/settings.json", {"model": "fixture"})
+        path = self.home / ".claude/settings.json"
+        path.parent.mkdir(parents=True)
+        path.symlink_to(source)
+        self.assertEqual(tools.link_status(source, path), "absolute")
+        tools.link(self.root, self.home, self.backups)
+        self.assertFalse(os.path.isabs(os.readlink(path)))
+        self.assertEqual(path.resolve(), source)
+        self.assertEqual(tools.link_status(source, path), "linked")
+        if shutil.which("stow"):
+            shutil.copy2(ROOT / ".stow-local-ignore", self.root / ".stow-local-ignore")
+            result = subprocess.run(["stow", "--simulate", "--verbose", "--no-folding", "--dir", str(self.root), "--target", str(self.home), "."],
+                                    text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn("LINK:", result.stdout + result.stderr)
+
+    def test_existing_folded_directory_never_becomes_a_self_referencing_source_link(self):
+        self.put(self.root, "tool-settings/manifest.json", {"files": [".claude/settings.json"]})
+        source = self.put(self.root, ".claude/settings.json", {"model": "fixture"})
+        folder = self.home / ".claude"
+        folder.symlink_to(os.path.relpath(source.parent, self.home))
+        original = source.read_bytes()
+        tools.link(self.root, self.home, self.backups)
+        self.assertFalse(source.is_symlink())
+        self.assertEqual(source.read_bytes(), original)
+        self.assertEqual((folder / "settings.json").resolve(), source)
+        self.assertEqual(tools.link_status(source, folder / "settings.json"), "linked")
 
 
 if __name__ == "__main__":

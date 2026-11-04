@@ -145,15 +145,28 @@ def managed_files(root):
         yield relative
 
 
+def link_status(source, path):
+    if path.resolve() == source.resolve():
+        return "absolute" if path.is_symlink() and os.path.isabs(os.readlink(path)) else "linked"
+    if not path.is_file():
+        return "missing"
+    return "matches" if path.read_bytes() == source.read_bytes() else "differs"
+
+
 def link(root, home, directory):
     for relative in managed_files(root):
         source, path = root / relative, home / relative
-        if path.is_symlink() and path.resolve() == source.resolve():
+        # A Stow-folded parent can expose the actual source file, not a leaf
+        # symlink. Never replace that file with a link to itself.
+        if not path.is_symlink() and path.resolve() == source.resolve():
+            continue
+        target = os.path.relpath(source.resolve(), path.parent.resolve())
+        if path.is_symlink() and os.readlink(path) == target and path.resolve() == source.resolve():
             continue
         backup(path, home, directory)
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(path.name + f".dotfiles-{os.getpid()}")
-        temporary.symlink_to(source)
+        temporary.symlink_to(target)
         temporary.replace(path)
         print(f"Linked: {relative}")
 
@@ -168,7 +181,7 @@ def main():
     elif args.action == "status":
         for relative in managed_files(ROOT):
             source, path = ROOT / relative, home / relative
-            state = "linked" if path.is_symlink() and path.resolve() == source.resolve() else "missing" if not path.is_file() else "matches" if path.read_bytes() == source.read_bytes() else "differs"
+            state = link_status(source, path)
             print(f"{state:8} {relative}")
         for name, selected in preference_values(home):
             path = ROOT / "tool-settings" / name
