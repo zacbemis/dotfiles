@@ -65,7 +65,10 @@ systemctl --user enable --now ssh-agent.socket
 ```
 
 SSH host definitions/private keys are intentionally not imported. NVM's installed
-versions and Node packages are also dependencies, not source settings.
+versions and Node packages are also dependencies, not source settings. The desktop
+installer initializes Arch's NVM package in `~/.config/nvm`, recreating the loader
+links used by both shell configs. It also installs the two configured Oh My Zsh
+plugins without resetting existing plugin checkouts.
 
 ## Mixed preferences and private state
 

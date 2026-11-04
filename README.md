@@ -103,7 +103,7 @@ chmod +x install.sh
 The script will:
 1. Install `yay` if missing
 2. Install desktop dependencies (official + AUR; developer tool CLIs are separate)
-3. Install Oh My Zsh and Powerlevel10k
+3. Install Oh My Zsh, Powerlevel10k and the configured autosuggestion/syntax plugins; prepare NVM loader links
 4. Stow the dotfiles
 5. Set zsh as default shell
 

@@ -132,6 +132,24 @@ if [[ ! -d "$P10K_DIR" ]]; then
     git clone --depth=1 https://github.com/romkatv/powerlevel10k.git "$P10K_DIR"
 fi
 
+# ── zsh plugins ──────────────────────────────────────────────────────
+ZSH_PLUGIN_DIR="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins"
+mkdir -p "$ZSH_PLUGIN_DIR"
+for plugin in zsh-autosuggestions zsh-syntax-highlighting; do
+    if [[ ! -d "$ZSH_PLUGIN_DIR/$plugin" ]]; then
+        info "Installing $plugin..."
+        git clone --depth=1 "https://github.com/zsh-users/$plugin.git" "$ZSH_PLUGIN_DIR/$plugin"
+    fi
+done
+
+# ── nvm ──────────────────────────────────────────────────────────────
+# Arch ships the implementation in /usr/share/nvm. Its initializer creates
+# the user-side nvm.sh/nvm-exec links expected by .zshenv and .zshrc.
+if [[ -r /usr/share/nvm/init-nvm.sh ]]; then
+    info "Preparing NVM loader links..."
+    NVM_DIR="$HOME/.config/nvm" bash -c 'source /usr/share/nvm/init-nvm.sh'
+fi
+
 # ── stow ─────────────────────────────────────────────────────────────
 info "Stowing dotfiles..."
 

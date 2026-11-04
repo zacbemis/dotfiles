@@ -30,6 +30,8 @@ python3 -m unittest discover -s tests -v
 - `test_tool_settings.py`: tracked tool config parsing, private-state ignore rules,
   filtered preference capture/restore, credential guards, relative Stow-compatible
   links and safe handling of existing folded directory links.
+- `test_install_shell.py`: fresh-install shell plugin cloning is mocked and
+  idempotent, and NVM initialization matches the configured user directory.
 - Other `test_*.py`: idle brightness, fonts, terminal colors and editor configuration.
 
 ## Desktop smoke tests
