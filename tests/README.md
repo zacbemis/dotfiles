@@ -30,6 +30,12 @@ python3 -m unittest discover -s tests -v
 - `test_tool_settings.py`: tracked tool config parsing, private-state ignore rules,
   filtered preference capture/restore, credential guards, relative Stow-compatible
   links and safe handling of existing folded directory links.
+- `test_install.py`: runs the full installer in temporary homes with mocked
+  packages, downloads, services and shell changes, but real Stow. Covers fresh and
+  repeat installs, default-file backups, missing yay, cleanup/failure paths and
+  private-state preservation and first-login lock colors. Optional Hyprlock parsing
+  uses a nonexistent display, never the live session. No system packages or services
+  are changed.
 - `test_install_shell.py`: fresh-install shell plugin cloning is mocked and
   idempotent, and NVM initialization matches the configured user directory.
 - Other `test_*.py`: idle brightness, fonts, terminal colors and editor configuration.

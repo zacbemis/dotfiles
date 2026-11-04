@@ -46,7 +46,9 @@ any existing files under
 `${XDG_STATE_HOME:-~/.local/state}/dotfiles-tool-settings/`. Unlisted sibling files,
 including credentials and sessions, are untouched. Standard Stow also deploys these
 source files on a fresh machine; this scoped helper avoids broad `--adopt` operations
-on existing tool directories.
+on existing tool directories. `install.sh` runs the same scoped linker first, so
+standard shell-file conflicts get private backups rather than blocking a fresh
+install. Other unreviewed desktop conflicts still stop Stow for manual review.
 
 Hook commands use `$HOME`, not a captured username. Codex may ask you to approve
 the portable hook command again: trust hashes are intentionally not exported.

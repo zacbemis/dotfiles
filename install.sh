@@ -12,23 +12,57 @@ error() { printf "${RED}[x]${NC} %s\n" "$1"; }
 
 DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+if [[ $# -eq 1 && ( "$1" == --help || "$1" == -h ) ]]; then
+    printf '%s\n' \
+        'Usage: ./install.sh' \
+        'Install the Arch desktop packages and restore tracked dotfiles.' \
+        'Run as your normal user with sudo access and an internet connection.' \
+        'Reviewed shell/tool conflicts are backed up; other Stow conflicts stop the install.' \
+        'Developer tool CLIs and authentication are installed separately.'
+    exit 0
+fi
+if [[ $# -gt 0 ]]; then
+    error "Unsupported arguments. Use ./install.sh --help; there is no live --dry-run mode."
+    exit 2
+fi
+
+# Run as the intended user: makepkg refuses root, and HOME is the Stow target.
+if [[ "$(id -u)" -eq 0 ]]; then
+    error "Run ./install.sh as your normal user, not with sudo."
+    exit 1
+fi
+if [[ -z "${HOME:-}" || ! -d "$HOME" ]]; then
+    error "HOME must point to an existing user home directory."
+    exit 1
+fi
+if ! command -v pacman &>/dev/null || ! command -v sudo &>/dev/null; then
+    error "This installer requires Arch Linux (pacman) and sudo access."
+    exit 1
+fi
+
 # ── yay ──────────────────────────────────────────────────────────────
 if ! command -v yay &>/dev/null; then
     info "Installing yay (AUR helper)..."
     sudo pacman -S --needed --noconfirm base-devel git
     tmpdir="$(mktemp -d)"
+    trap 'rm -rf -- "$tmpdir"' EXIT
     git clone https://aur.archlinux.org/yay-bin.git "$tmpdir/yay-bin"
     (cd "$tmpdir/yay-bin" && makepkg -si --noconfirm)
-    rm -rf "$tmpdir"
+    rm -rf -- "$tmpdir"
+    trap - EXIT
 fi
 
 # ── official repo packages ───────────────────────────────────────────
 OFFICIAL=(
+    # AUR build prerequisites, including when yay was already installed
+    base-devel
+
     # compositor & tools
     hyprland
     hyprlock
     hypridle
     xdg-desktop-portal-hyprland
+    xdg-desktop-portal-gtk # fallback file chooser/settings portal
 
     # desktop bar, launcher, notifications
     quickshell
@@ -40,7 +74,10 @@ OFFICIAL=(
     xdg-utils
     pacman-contrib
 
-    # terminal & shell
+    # terminal, shell & Git authentication helper
+    curl
+    git
+    github-cli
     kitty
     zsh
     fzf
@@ -104,6 +141,7 @@ OFFICIAL=(
 
 # ── AUR packages ─────────────────────────────────────────────────────
 AUR=(
+    helium-browser-bin # Super+B and the default HTML/HTTP handlers
     python-pywal16
     matugen
     bibata-cursor-theme
@@ -121,8 +159,9 @@ yay -S --needed --noconfirm "${AUR[@]}"
 # ── oh-my-zsh ────────────────────────────────────────────────────────
 if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
     info "Installing Oh My Zsh..."
-    RUNZSH=no KEEP_ZSHRC=yes \
-        sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+    omz_installer="$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+    ZSH="$HOME/.oh-my-zsh" RUNZSH=no CHSH=no KEEP_ZSHRC=yes \
+        sh -c "$omz_installer"
 fi
 
 # ── powerlevel10k ────────────────────────────────────────────────────
@@ -161,7 +200,23 @@ mkdir -p "$HOME/.config/quickshell" \
          "$HOME/.config/gtk-3.0" \
          "$HOME/.config/gtk-4.0"
 
+# Hyprlock sources this file directly, unlike the compositor's Lua fallback.
+# Make a first login lockable before the first wallpaper is selected. Do not
+# replace existing palettes or interfere with an existing generator's recovery.
+palette="$HOME/.config/hypr/colors/colors.conf"
+generator_state="${XDG_STATE_HOME:-$HOME/.local/state}/hypr/color-generator"
+if [[ ! -s "$palette" && ! -s "$generator_state" ]]; then
+    info "Creating a first-login lockscreen palette..."
+    palette_tmp="$(mktemp "$palette.XXXXXX")"
+    printf '%s\n' '$primary = rgba(89b4faff)' '$secondary = rgba(cba6f7ff)' \
+        '$inverse_primary = rgba(ffffffff)' > "$palette_tmp"
+    mv -f -- "$palette_tmp" "$palette"
+fi
+
 cd "$DOTFILES_DIR"
+# Arch skeleton files and Oh My Zsh's generated .zshrc are expected conflicts.
+# Restore only the reviewed manifest, with private backups; never adopt into Git.
+python3 "$DOTFILES_DIR/scripts/tool-settings.py" link
 if ! stow --no-folding --target="$HOME" .; then
     error "Stow found conflicting files or links; no existing settings were adopted."
     warn "Back up and resolve the reported conflicts, then rerun Stow."
@@ -172,29 +227,31 @@ fi
 # GTK/portal settings also need the proportional UI / fixed-width editor split.
 # Fontconfig aliases (stowed above) cover other apps and Nerd glyph fallback.
 if command -v gsettings &>/dev/null && \
-        gsettings list-schemas | grep -qx org.gnome.desktop.interface; then
+        gsettings list-schemas | grep -x org.gnome.desktop.interface >/dev/null; then
     info "Applying Ubuntu UI and monospace fonts..."
-    gsettings set org.gnome.desktop.interface font-name 'Ubuntu Sans 11'
-    gsettings set org.gnome.desktop.interface monospace-font-name 'UbuntuMono Nerd Font Mono 11'
+    if ! { gsettings set org.gnome.desktop.interface font-name 'Ubuntu Sans 11' &&
+           gsettings set org.gnome.desktop.interface monospace-font-name 'UbuntuMono Nerd Font Mono 11'; }; then
+        warn "Could not apply GTK/portal font preferences; retry from a graphical user session."
+    fi
 fi
 
 # ── default shell ────────────────────────────────────────────────────
-if [[ "$SHELL" != */zsh ]]; then
+# SHELL can still name the old shell until the next login; inspect passwd so
+# rerunning the installer does not repeat chsh or depend on SHELL being set.
+login_entry="$(getent passwd "$(id -u)")"
+login_shell="${login_entry##*:}"
+if [[ "$login_shell" != */zsh ]]; then
     info "Changing default shell to zsh..."
-    chsh -s "$(which zsh)"
+    chsh -s "$(command -v zsh)"
     warn "Log out and back in for the shell change to take effect."
 fi
 
 # ── enable services ──────────────────────────────────────────────────
-if ! systemctl is-enabled NetworkManager &>/dev/null; then
-    info "Enabling NetworkManager..."
-    sudo systemctl enable --now NetworkManager
-fi
-
-if ! systemctl is-enabled bluetooth &>/dev/null; then
-    info "Enabling Bluetooth..."
-    sudo systemctl enable --now bluetooth
-fi
+# enable --now is idempotent and also starts an enabled-but-inactive service.
+for service in NetworkManager bluetooth; do
+    info "Enabling and starting $service..."
+    sudo systemctl enable --now "$service"
+done
 
 # ── done ─────────────────────────────────────────────────────────────
 echo ""

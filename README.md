@@ -91,21 +91,37 @@ for plugins and keybindings.
 
 ## Install
 
-Clone the repo and run the install script:
+Run on Arch Linux as your **normal user**, with sudo access and an internet
+connection. Update the system first to avoid partial upgrades:
 
 ```bash
-git clone https://github.com/zacb/dotfiles.git ~/dotfiles
+sudo pacman -Syu --needed git
+git clone https://github.com/zacbemis/dotfiles.git ~/dotfiles
 cd ~/dotfiles
-chmod +x install.sh
 ./install.sh
 ```
 
 The script will:
-1. Install `yay` if missing
-2. Install desktop dependencies (official + AUR; developer tool CLIs are separate)
-3. Install Oh My Zsh, Powerlevel10k and the configured autosuggestion/syntax plugins; prepare NVM loader links
-4. Stow the dotfiles
-5. Set zsh as default shell
+1. Install `yay` if missing, cleaning up its temporary build even on failure
+2. Install desktop dependencies, Helium, Git and GitHub CLI (official + AUR)
+3. Install Oh My Zsh, Powerlevel10k and the configured plugins; prepare NVM loader links
+4. Back up and link reviewed shell/tool configs, then Stow the remaining files
+5. Set zsh as the login shell if needed, without repeating `chsh` on reruns
+6. Enable and start NetworkManager and Bluetooth, even if enabled but stopped
+
+Arch skeleton shell files and generated Oh My Zsh settings are backed up under
+`~/.local/state/dotfiles-tool-settings/` before replacement. Other existing desktop
+config conflicts stop the installer for review; nothing is imported with `--adopt`.
+A missing graphical settings bus produces a font-preference warning rather than
+aborting the install; retry those settings after entering a graphical session.
+On a first install without saved generator state, fallback Hyprlock colors make
+locking independent of the first wallpaper selection. Existing palettes and saved
+color-generator recovery are left alone. Use `./install.sh --help` for usage;
+unsupported flags are rejected rather than silently starting a live install.
+
+Coding-agent CLIs, editor applications, authentication and optional MIME-associated
+apps such as GIMP, File Roller and Vesktop are separate installs. The script does
+not upgrade Herdr integration snapshots or apply private-state preference exports.
 
 ## Manual stow
 
