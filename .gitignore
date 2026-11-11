@@ -54,6 +54,7 @@
 !.pi/agent/
 !.pi/web-search.json
 .pi/agent/*
+!.pi/agent/AGENTS.md
 !.pi/agent/settings.json
 !.pi/agent/multi-pass.json
 !.pi/agent/extensions/

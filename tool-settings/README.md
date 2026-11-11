@@ -10,7 +10,7 @@ not a backup of accounts, conversations, workspaces or installed applications.
 |---|---|---|
 | Herdr | Config, keys, wallpaper color helpers; agent integration source snapshots | Sockets, logs, session layout/snapshots, release metadata |
 | Claude Code | Model/effort, theme, Vim mode, enabled plugin, `CLAUDE.md`, session hook and script | `.credentials.json`, root `.claude.json` account/cache/trust state, projects/history, cloud-synced skills and plugin downloads |
-| Pi | Agent settings/packages, multi-pass, web settings, unchanged Herdr extension | Auth, model discovery cache, trust, conversations, npm/git installations and provider sessions |
+| Pi | Global `AGENTS.md` instructions, agent settings/packages, multi-pass, web settings, unchanged Herdr extension | Auth, model discovery cache, trust, conversations, npm/git installations and provider sessions |
 | Codex | Model/reasoning/features in `codex.json`; session hook config and script | Existing `config.toml` project trust, hook approvals, onboarding, auth, SQLite databases and sessions |
 | Cursor editor | Editor settings/keybindings, current `.cursor` session hook/script, extension IDs | Editor storage, account state, downloaded extensions/plugins |
 | Cursor CLI | Allowlisted preferences in `cursor-cli.json`; launch options in `cursor-argv.json` | Login/auth metadata, model/cache history, crash-reporting instance ID, chats and sandbox policy state |

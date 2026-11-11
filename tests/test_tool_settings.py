@@ -23,7 +23,7 @@ class ToolSources(unittest.TestCase):
         files = list(tools.managed_files(ROOT))
         self.assertEqual(len(files), len(set(files)))
         for required in (".config/herdr/config.toml", ".claude/settings.json", ".claude/CLAUDE.md",
-                         ".pi/agent/settings.json", ".pi/agent/extensions/herdr-agent-state.ts",
+                         ".pi/agent/AGENTS.md", ".pi/agent/settings.json", ".pi/agent/extensions/herdr-agent-state.ts",
                          ".copilot/settings.json", ".codex/hooks.json", ".config/Code/User/settings.json"):
             self.assertIn(Path(required), files)
         for relative in files:

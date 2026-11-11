@@ -3,6 +3,7 @@
     ".config/herdr/config.toml",
     ".config/herdr/reload-colors.sh",
     ".config/herdr/sync-colors.py",
+    ".pi/agent/AGENTS.md",
     ".pi/agent/settings.json",
     ".pi/agent/multi-pass.json",
     ".pi/web-search.json",
