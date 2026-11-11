@@ -12,6 +12,7 @@
 ## Code
 
 - Before implementing functionality, identify the class, module, or component that should own the behavior.
+- Organize code by feature or domain first, then separate responsibilities within that feature.
 - Extend the existing abstraction through its intended extension points instead of implementing functionality around it.
 - Components must communicate through intentional, well-defined APIs.
 - Never bypass existing public APIs to manipulate implementation details directly.
@@ -23,11 +24,18 @@
 - Prefer private fields and the narrowest possible visibility.
 - Every layer must perform only the responsibilities assigned to it.
 - When behavior has distinct phases or modes, represent them using explicit state types.
+- Name files, classes, components, modules, and functions according to their actual domain responsibility.
 
 ## Code comments
 
 - Only write comments that are needed: to explain something abnormal or non-obvious (a workaround, an edge case, why code departs from the expected approach), or to separate sections.
 - This rule wins over matching the surrounding code: do not add doc comments just because neighbouring members have them.
+
+## UI
+
+- Prefer clean, minimal interfaces with high information density and clear visual hierarchy.
+- Prefer clear layout, spacing, grouping, typography, and visual hierarchy.
+- Avoid unnecessary nested cards, containers, borders, and visual decorations.
 
 ## Git commits
 
