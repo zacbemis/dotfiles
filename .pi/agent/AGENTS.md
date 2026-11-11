@@ -9,6 +9,21 @@
 - Build features in layers. Start with the smallest working end-to-end version, validate it, and build each new capability on top of the already working foundation.
 - Make architectural decisions with long-term maintainability in mind. If the architecture requires a rewrite, stop and explain why, including the trade-offs, before proceeding.
 
+## Code
+
+- Before implementing functionality, identify the class, module, or component that should own the behavior.
+- Extend the existing abstraction through its intended extension points instead of implementing functionality around it.
+- Components must communicate through intentional, well-defined APIs.
+- Never bypass existing public APIs to manipulate implementation details directly.
+- If the existing abstraction cannot accommodate the feature cleanly, stop and explain the required refactor.
+- Every mutable piece of state must have a clearly identifiable owner.
+- Only the owning component may directly mutate its internal state.
+- Other components must request changes through the owner's public methods or API.
+- Do not expose internal mutable collections, objects, or implementation-specific data structures.
+- Prefer private fields and the narrowest possible visibility.
+- Every layer must perform only the responsibilities assigned to it.
+- When behavior has distinct phases or modes, represent them using explicit state types.
+
 ## Code comments
 
 - Only write comments that are needed: to explain something abnormal or non-obvious (a workaround, an edge case, why code departs from the expected approach), or to separate sections.
