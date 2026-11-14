@@ -37,8 +37,8 @@ are hidden in both the editor and explorer.
 - `lua/plugins/bufferline.lua`: top bar for open files.
 - `lua/plugins/statusline.lua`: compact Lualine bottom bar and explorer status.
 - `lua/plugins/telescope.lua`: fuzzy finder and search keybindings.
-- `lua/plugins/diffview.lua`: side-by-side Git diffs.
-- `lua/config/diffview.lua`: explorer-style Git sidebar branches and badges.
+- `lua/plugins/diffview.lua`: Git-review entry point and Diffview rendering configuration.
+- `lua/config/git_review/`: repository queries, review-tree state, sidebar, Diffview adapter, and session lifecycle.
 - `lua/plugins/lsp.lua`: language server management and completion plugins.
 - `lua/config/lsp.lua`: enabled servers, diagnostics, and LSP keybindings.
 - `lua/config/treesitter.lua`: language parsers, highlighting, indentation, and folds.
@@ -179,32 +179,41 @@ and `Esc` to close. `Ctrl-v` / `Ctrl-x` open the result in a vertical / horizont
 split. Searches skip `.git` internals. ripgrep and fd are already installed on
 this machine; text search requires ripgrep on other machines.
 
-## Side-by-side Git diffs
+## Git review
 
-From a Git repository:
+`Space gd` opens one review browser, with this sidebar order:
 
-- `Space gd`: open Diffview in its own Neovim tabpage
-- `Space gq`: close Diffview and return to your previous layout
-- `Space e` inside Diffview: toggle its changed-file tree (hide/show)
-- `j` / `k` in the file panel: select a changed file; `Enter` or `l` opens its diff
-- `Tab` / `Shift-Tab`: next / previous changed file
-- `[c` / `]c`: previous / next diff hunk
-- `Ctrl-h/j/k/l`: navigate between windows as usual (`Ctrl-k` at the top focuses the file tab bar)
-- `g?`: show Diffview's keybindings
+1. **Unstaged files** (including untracked files)
+2. **Staged files**
+3. **Most recent commit**, followed by older commits on the current branch
 
-The Git sidebar shares the main explorer's surface, width, folder icons, connected
-branches, and trailing Git badges. `h` collapses folders, `l` expands them, and
-`Enter` toggles them. Diffview uses fixed green additions and red deletions,
-including replacement hunks (red on the left, green on the right), with stronger
-red/green highlights for individual edits. These colors never follow the wallpaper
-or replace syntax text colors. Only the underlying editor/UI surfaces follow the
-wallpaper; empty alignment rows are blank and neutral.
+Sections and commits behave like folders. Their files are grouped into directories.
+The browser uses ordinary text markers instead of requiring Nerd Font icons.
 
-The left and right panes compare the index and working file for unstaged changes;
-staged files appear in their own section. For other comparisons, use
-`:DiffviewOpen HEAD`, `:DiffviewOpen main...HEAD`, or
-`:DiffviewFileHistory %` for the current file's history.
-This viewer uses Git; it is not an arbitrary two-file comparison picker.
+- `j` / `k`: navigate the sidebar.
+- `l`: expand a section, commit, or directory; open a file in the diff area.
+- `L`: make the selected section, commit, or directory the browser root; open a file.
+- `h`: collapse an expanded folder, or move to and collapse its parent.
+- `H`: go up from the current browser root, selecting and collapsing the root just left.
+- `Enter`: toggle a folder or open a file.
+- `Space e`: focus the review sidebar from either diff pane.
+- `s`: stage an unstaged file/directory/section, or unstage a staged one.
+- `R`: refresh. The browser also refreshes after writes, on focus, and while active.
+- `Older commits...`: load the next page of history with `l` or `Enter`.
+- `Space q` or `:q`: exit the entire review and restore the previous editing layout.
+- `g?`: show sidebar controls. `[c` / `]c` retain normal diff-hunk navigation.
+
+Unstaged comparisons show index versus working file; staged comparisons show HEAD
+versus index; commit comparisons show parent versus commit (the first parent for
+merges). Selecting files replaces the current comparison instead of stacking views.
+Staging and external Git commits move files down through the sidebar's sections.
+History is read-only: browsing never checks out a commit or modifies the working tree.
+There is no separate `Space gl` or `Space gq` entry point.
+
+Diffview remains responsible for diff buffers, hunk editing, and its Git integration;
+the review sidebar and lifecycle use only public APIs. Normal editor buffers and
+unsaved text are preserved. Save pending edits to an index diff buffer before
+switching comparisons or closing the review. Existing theme colors are retained.
 
 ## Git signs and hunks
 
@@ -214,7 +223,7 @@ and grows automatically for larger line numbers. A one-cell left inset and
 number/sign gap provide minimal padding; the sign column also separates the
 markers from the code. Relative numbering is retained; the explorer has neither
 a number column nor a sign-column gutter.
-It works alongside Diffview; the existing `Space gd` / `Space gq` keys are unchanged.
+It works alongside the Git-review browser opened with `Space gd`.
 In Git-tracked buffers:
 
 - `[h` / `]h`: previous / next hunk (uses diff navigation in diff windows)

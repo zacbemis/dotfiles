@@ -1,52 +1,39 @@
-local function command(name)
-  return function()
-    local tabs = require("config.tab_navigation")
-    if tabs.active then
-      tabs.leave()
-    end
-    vim.cmd(name)
-  end
-end
-
 return {
   {
     "sindrets/diffview.nvim",
-    cmd = {
-      "DiffviewOpen", "DiffviewClose", "DiffviewFileHistory",
-      "DiffviewToggleFiles", "DiffviewFocusFiles", "DiffviewRefresh",
-    },
+    cmd = { "DiffviewOpen", "DiffviewClose", "DiffviewRefresh" },
     dependencies = { "nvim-tree/nvim-web-devicons" },
     keys = {
-      { "<leader>gd", command("DiffviewOpen"), desc = "Open side-by-side Git diff" },
-      { "<leader>gq", command("DiffviewClose"), desc = "Close Git diff view" },
-    },
-    config = function(_, opts)
-      require("diffview").setup(opts)
-      require("config.diffview").setup()
-    end,
-    opts = {
-      enhanced_diff_hl = true, -- Tint real removed lines, not empty alignment rows.
-      hooks = {
-        diff_buf_win_enter = function(...) require("config.diffview").diff_colors(...) end,
+      {
+        "<leader>gd",
+        function()
+          local tabs = require("config.tab_navigation")
+          if tabs.active then tabs.leave() end
+          require("config.git_review").open()
+        end,
+        desc = "Browse changes and commit history",
       },
+    },
+    opts = {
+      enhanced_diff_hl = true,
       show_help_hints = false,
-      icons = { folder_closed = "", folder_open = "" },
+      hooks = {
+        view_closed = function(view) require("config.git_review").on_view_closed(view.tabpage) end,
+        diff_buf_win_enter = function(...) require("config.git_review.diffview").decorate(...) end,
+      },
       view = {
-        default = { layout = "diff2_horizontal" }, -- Left/right panes.
+        default = { layout = "diff2_horizontal" },
         file_history = { layout = "diff2_horizontal" },
       },
-      file_panel = {
-        listing_style = "tree",
-        tree_options = { flatten_dirs = false, folder_statuses = "only_folded" },
-        win_config = { width = 26 },
-      },
       keymaps = {
-        view = { ["<leader>e"] = "<Cmd>DiffviewToggleFiles<CR>" },
-        file_panel = {
-          ["<leader>e"] = "<Cmd>DiffviewToggleFiles<CR>",
-          ["l"] = function() require("config.diffview").open_entry() end,
+        view = {
+          ["<leader>e"] = function() require("config.git_review").focus_sidebar() end,
+          ["<leader>q"] = function() require("config.git_review").close() end,
         },
-        file_history_panel = { ["<leader>e"] = "<Cmd>DiffviewToggleFiles<CR>" },
+        file_panel = {
+          ["<leader>e"] = function() require("config.git_review").focus_sidebar() end,
+          ["<leader>q"] = function() require("config.git_review").close() end,
+        },
       },
     },
   },
