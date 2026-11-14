@@ -16,6 +16,9 @@ local api = vim.api
 local nav = require('config.tab_navigation')
 -- Keep the test independent of installed plugins and network access.
 _G.nvim_bufferline = function() return ' File tabs ' end
+package.preload['bufferline'] = function()
+  return { get_elements = function() return { elements = {} } end }
+end
 local cycles = 0
 for _, name in ipairs({ 'BufferLineCyclePrev', 'BufferLineCycleNext' }) do
   api.nvim_create_user_command(name, function() cycles = cycles + 1 end, {})

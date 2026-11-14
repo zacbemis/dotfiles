@@ -98,6 +98,22 @@ function M.enter()
   if not target_win then
     return
   end
+  if vim.bo[api.nvim_win_get_buf(target_win)].filetype == "NvimTree"
+    and #api.nvim_tabpage_list_wins(0) == 1 then
+    _G.nvim_bufferline()
+    local bufferline = require("bufferline")
+    local elements = bufferline.get_elements().elements
+    if #elements > 0 then
+      local previous, selected = vim.fn.bufnr("#"), 1
+      for index, element in ipairs(elements) do
+        if element.id == previous then selected = index; break end
+      end
+      -- Let the explorer restore an editor before asking Bufferline to select a file.
+      require("nvim-tree.api").tree.close_in_this_tab()
+      target_win = api.nvim_get_current_win()
+      bufferline.go_to(selected, true)
+    end
+  end
   bar_buf = api.nvim_create_buf(false, true)
   vim.bo[bar_buf].bufhidden = "wipe"
   vim.bo[bar_buf].filetype = "personal-tab-bar"
