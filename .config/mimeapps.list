@@ -6,6 +6,7 @@ x-scheme-handler/https=helium.desktop
 x-scheme-handler/about=helium.desktop
 x-scheme-handler/unknown=helium.desktop
 x-scheme-handler/claude-cli=claude-code-url-handler.desktop
+x-scheme-handler/t3code=com.t3tools.T3Code.desktop
 
 [Added Associations]
 application/zip=org.gnome.FileRoller.desktop;
