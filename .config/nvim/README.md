@@ -282,7 +282,7 @@ active clients and configuration. Internet access is needed for installation.
 | Language | Server |
 | --- | --- |
 | Lua | lua-language-server (`lua_ls`) |
-| C / C++ | clangd |
+| C / C++ / CUDA | clangd |
 | CMake | neocmakelsp (`neocmake`) |
 | JavaScript / TypeScript, JSX / TSX | typescript-language-server (`ts_ls`) |
 | Java | Eclipse JDT LS (`jdtls`) |
@@ -319,7 +319,15 @@ without a completion menu, `Tab` works normally. `Ctrl-y` also accepts, and
 argument placeholders; signature-help text alone is not a snippet. `Shift-Tab`
 jumps to the previous placeholder. `Ctrl-k` no longer opens signature help;
 use `Space cs` in normal mode instead.
-No autoformat-on-save or extra formatter is enabled.
+Format-on-save uses an attached language server when it supports formatting
+(including clangd for C/C++/CUDA). Formatting finishes before the file is saved,
+with a two-second timeout. Files without a formatting-capable server are left
+unchanged; no extra formatter is installed. Project formatting settings such as
+`.clang-format` are respected.
+
+Disable for the current buffer with `:lua vim.b.autoformat = false`, or globally
+with `:lua vim.g.autoformat = false`. Set the same variable to `true` to re-enable.
+`Space cf` still formats manually, even when format-on-save is disabled.
 
 Project/tooling notes:
 

@@ -50,6 +50,25 @@ function M.setup()
   })
 
   local group = vim.api.nvim_create_augroup("PersonalLsp", { clear = true })
+  vim.api.nvim_create_autocmd("BufWritePre", {
+    group = group,
+    desc = "Format on save when a language server supports it",
+    callback = function(event)
+      if vim.g.autoformat == false or vim.b[event.buf].autoformat == false then
+        return
+      end
+      if vim.bo[event.buf].buftype ~= "" or not vim.bo[event.buf].modifiable then
+        return
+      end
+      local clients = vim.lsp.get_clients({
+        bufnr = event.buf,
+        method = "textDocument/formatting",
+      })
+      if clients[1] then
+        vim.lsp.buf.format({ bufnr = event.buf, id = clients[1].id, async = false, timeout_ms = 2000 })
+      end
+    end,
+  })
   vim.api.nvim_create_autocmd("LspAttach", {
     group = group,
     callback = function(event)
