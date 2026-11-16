@@ -1,120 +1,48 @@
-# Tool settings inventory
+# Tool settings
 
-Audited against the local machine on 2026-11-03. This is a preferences/source backup,
-not a backup of accounts, conversations, workspaces or installed applications.
-`manifest.json` lists the explicitly managed files; no tool directory is copied wholesale.
+Reviewed preferences and integration sources, not accounts or application backups.
+`manifest.json` lists managed files; unlisted siblings stay untouched.
 
-## Coverage
+## Features
 
-| Tool | Tracked | Deliberately local |
-|---|---|---|
-| Herdr | Config, keys, wallpaper color helpers; agent integration source snapshots | Sockets, logs, session layout/snapshots, release metadata |
-| Claude Code | Model/effort, theme, Vim mode, enabled plugin, `CLAUDE.md`, session hook and script | `.credentials.json`, root `.claude.json` account/cache/trust state, projects/history, cloud-synced skills and plugin downloads |
-| Pi | Global `AGENTS.md` instructions, agent settings/packages, multi-pass, web settings, unchanged Herdr extension | Auth, model discovery cache, trust, conversations, npm/git installations and provider sessions |
-| Codex | Model/reasoning/features in `codex.json`; session hook config and script | Existing `config.toml` project trust, hook approvals, onboarding, auth, SQLite databases and sessions |
-| Cursor editor | Editor settings/keybindings, current `.cursor` session hook/script, extension IDs | Editor storage, account state, downloaded extensions/plugins |
-| Cursor CLI | Allowlisted preferences in `cursor-cli.json`; launch options in `cursor-argv.json` | Login/auth metadata, model/cache history, crash-reporting instance ID, chats and sandbox policy state |
-| Copilot CLI | Effort setting and session hook/script | `config.json` **contains login tokens**, chats, logs and runtime state |
-| OpenCode | Config, TUI plugin declaration, pinned plugin dependency, both Herdr plugin sources | node_modules, caches, lock/runtime state and credentials |
-| Antigravity CLI | Model and telemetry preference in `antigravity-cli.json` | Trusted workspaces, auth/ACP settings, machine hostname, databases/history |
-| VS Code | User settings, keybindings, Java snippets, extension IDs | Profiles directory was empty; user/workspace storage, sync and extension binaries stay local |
-| GitHub CLI | Protocol, alias and presentation preferences | `hosts.yml` / OAuth credentials |
-| htop | Display, columns, sort and meter preferences | Process/runtime state |
-| Shell, Git, Neovim, Kitty, desktop | Existing configs remain tracked in their normal locations | Shell history, SSH host topology/keys and runtime-generated palettes |
+- Herdr configuration, keybindings, wallpaper colors and agent hooks.
+- Claude Code, Pi, Codex, Cursor, Copilot, OpenCode and Antigravity preferences.
+- VS Code/Cursor settings, keybindings, snippets and extension lists.
+- GitHub CLI and htop preferences.
+- Allowlisted snapshots for tools that mix preferences with private state.
+- Relative, Stow-compatible links with private backups of replaced files.
+- Credential guards; auth, sessions, trust, caches and downloaded packages stay local.
 
-Provider-bundled skills, downloaded marketplaces and Claude's account-synced skill
-bucket are not vendored. The locally maintained `skills/system/run-workflow` is
-already tracked. Browser/Electron application profiles and password stores are not
-part of this public settings backup.
+## Commands
 
-## Restore or check links
-
-Install the desired tools separately, then:
+Run from the repository root:
 
 ```bash
-cd ~/dotfiles
 python3 scripts/tool-settings.py status
 python3 scripts/tool-settings.py link
 ```
 
-`status` also checks whether the filtered preference snapshots match the current
-local settings, without printing private values. `absolute` means an otherwise
-correct link needs normalization for Stow. `link` creates relative Stow-compatible
-links, normalizes old absolute links and leaves files reached through an existing
-Stow-folded directory alone. It installs only the manifest's leaf files, backing up
-any existing files under
-`${XDG_STATE_HOME:-~/.local/state}/dotfiles-tool-settings/`. Unlisted sibling files,
-including credentials and sessions, are untouched. Standard Stow also deploys these
-source files on a fresh machine; this scoped helper avoids broad `--adopt` operations
-on existing tool directories. `install.sh` runs the same scoped linker first, so
-standard shell-file conflicts get private backups rather than blocking a fresh
-install. Other unreviewed desktop conflicts still stop Stow for manual review.
+Backups go under `${XDG_STATE_HOME:-~/.local/state}/dotfiles-tool-settings/`.
+Install applications and sign in separately.
 
-Hook commands use `$HOME`, not a captured username. Codex may ask you to approve
-the portable hook command again: trust hashes are intentionally not exported.
-The Herdr hooks are unchanged snapshots of the installed integration code, not
-new handwritten integrations. Some installed hooks were reported outdated by
-`herdr integration status`; no integrations were upgraded during this backup.
-To deliberately update one later, run `herdr integration install <tool>`, review
-the resulting changes, and check links again. Current Herdr's Cursor CLI integration
-uses `.config/cursor/`, separately from the older Cursor editor hook in `.cursor/`.
-
-The captured `.zshenv` uses the user SSH agent socket. On another machine, enable
-the supplied socket unit separately if desired:
-
-```bash
-systemctl --user enable --now ssh-agent.socket
-```
-
-SSH host definitions/private keys are intentionally not imported. NVM's installed
-versions and Node packages are also dependencies, not source settings. The desktop
-installer initializes Arch's NVM package in `~/.config/nvm`, recreating the loader
-links used by both shell configs. It also installs the two configured Oh My Zsh
-plugins without resetting existing plugin checkouts.
-
-## Mixed preferences and private state
-
-Codex and Cursor CLI mix settings with local state, so their live files must **not**
-be symlinked into Git. Refresh only the allowlisted preference snapshots with:
+Filtered preferences are captured/restored explicitly, never by the desktop installer:
 
 ```bash
 python3 scripts/tool-settings.py capture-preferences
-```
-
-After reviewing the snapshots, restore them explicitly with:
-
-```bash
+# Review snapshots before restoring:
 python3 scripts/tool-settings.py apply-preferences
 ```
 
-JSON preferences merge at owned top-level keys and preserve account/trust/cache
-fields. The command backs up originals privately. An existing Codex TOML is left
-untouched; merge `codex.json`'s settings manually if desired. On a fresh machine,
-a minimal Codex TOML is created without project trust or hook approval hashes.
+Restores preserve unrelated JSON state and leave existing Codex TOML untouched.
+**The captured Cursor CLI preferences disable sandboxing and use unrestricted approvals.**
+Review before applying; credentials and trust decisions are not exported.
 
-**Review security preferences before restoring:** the captured Cursor CLI setup
-uses unrestricted approval mode and a disabled sandbox, matching this machine's
-existing settings. Restoring preferences is optional and is not run by the desktop
-installer. Account credentials, workspace-trust lists and hook approval hashes are
-not exported or auto-approved.
+## Optional dependencies
 
-## Dependencies and optional extensions
+- OpenCode plugin: `npm install --prefix ~/.config/opencode`.
+- Claude plugin: `claude plugin install clangd-lsp@claude-plugins-official`.
+- Editor extensions: `xargs -r -n 1 code --install-extension < tool-settings/vscode-extensions.txt`
+  (use `cursor` and `cursor-extensions.txt` for Cursor).
 
-These steps download third-party code; review before running them:
-
-- Pi restores configured packages at startup; `pi update --extensions` explicitly
-  reconciles them. Package declarations, not npm/git caches, are the source of truth.
-- Claude's enabled plugin is declared in its settings; install it with
-  `claude plugin install clangd-lsp@claude-plugins-official` if it is not already available.
-- OpenCode's pinned plugin dependency can be restored with
-  `npm install --prefix ~/.config/opencode`.
-- Editor extension IDs are saved in `vscode-extensions.txt` and
-  `cursor-extensions.txt`. With the appropriate editor CLI installed:
-
-  ```bash
-  xargs -r -n 1 code --install-extension < tool-settings/vscode-extensions.txt
-  xargs -r -n 1 cursor --install-extension < tool-settings/cursor-extensions.txt
-  ```
-
-Sign into each tool independently. Do not copy auth files into this repository.
-Deny-by-default Git ignore rules and `tests/test_tool_settings.py` guard the boundary.
+These commands download third-party code. Herdr hooks are source snapshots;
+upgrade integrations separately and review the resulting changes.

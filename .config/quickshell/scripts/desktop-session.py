@@ -167,10 +167,8 @@ def start_shell():
         return
     owner = notification_owner()
     data = session()
-    if alive(data.get("supervisor")):
-        # It may still be starting/recovering. Do not launch a second supervisor.
-        pass
-    else:
+    # A live supervisor may still be starting/recovering; wait instead of duplicating it.
+    if not alive(data.get("supervisor")):
         if owner is not None:
             raise RuntimeError(f"Notification name is owned by PID {owner}; stop that server explicitly before starting Quickshell")
         spawn([sys.executable, str(Path(__file__).resolve()), "serve"], "desktop")

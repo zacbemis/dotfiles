@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Actual OSD regression with a fake backlight; never dims/restores real hardware."""
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
