@@ -1,4 +1,5 @@
 local map = vim.keymap.set
+require("config.quit").setup()
 
 map("n", "<Esc>", "<cmd>nohlsearch<CR>", { desc = "Clear search highlighting" })
 map("n", "<leader>w", "<cmd>write<CR>", { desc = "Save file" })
