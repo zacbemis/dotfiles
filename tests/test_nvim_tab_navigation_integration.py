@@ -25,14 +25,11 @@ vim.opt.showtabline = 2
 vim.opt.termguicolors = true
 require('config.keymaps')
 require('bufferline').setup({ options = { mode = 'buffers', always_show_bufferline = true } })
-require('nvim-tree').setup({
+local explorer = require('plugins.explorer')[1]
+require('nvim-tree').setup(vim.tbl_deep_extend('force', explorer.opts, {
   filesystem_watchers = { enable = false },
   git = { enable = false },
-  on_attach = function(buf)
-    require('nvim-tree.api').map.on_attach.default(buf)
-    vim.keymap.del('n', '<C-k>', { buffer = buf })
-  end,
-})
+}))
 local tree = require('nvim-tree.api').tree
 local nav = require('config.tab_navigation')
 local function press(key)
@@ -128,12 +125,18 @@ vim.cmd('qa!')
                      "Real plugin fixtures are not installed")
 class RealTabNavigation(unittest.TestCase):
     def test_fullscreen_tree_and_sidebar(self):
+        self.check_navigation('<C-k>')
+
+    def test_space_k_from_fullscreen_tree_and_sidebar(self):
+        self.check_navigation(' k')
+
+    def check_navigation(self, key):
         with tempfile.TemporaryDirectory() as tmp:
             fixture = Path(tmp)
             (fixture / "first.txt").write_text("first\n")
             (fixture / "second.txt").write_text("second\n")
             script = fixture / "check.lua"
-            script.write_text(LUA)
+            script.write_text(LUA.replace("press('<C-k>')", f"press({key!r})"))
             result = subprocess.run(
                 ["nvim", "--headless", "-u", "NONE", "-i", "NONE", "-l", str(script)],
                 env=dict(os.environ, NVIM_CONFIG=str(ROOT / ".config/nvim"),

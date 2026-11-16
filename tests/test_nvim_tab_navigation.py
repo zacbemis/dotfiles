@@ -79,9 +79,15 @@ vim.cmd('qa!')
 @unittest.skipUnless(shutil.which('nvim'), 'Neovim is not installed')
 class TabNavigation(unittest.TestCase):
     def test_startup_tree_and_sidebar(self):
+        self.check_navigation('<C-k>')
+
+    def test_space_k_from_startup_tree_and_sidebar(self):
+        self.check_navigation(' k')
+
+    def check_navigation(self, key):
         with tempfile.TemporaryDirectory() as tmp:
             script = Path(tmp) / 'check.lua'
-            script.write_text(LUA)
+            script.write_text(LUA.replace("press('<C-k>')", f"press({key!r})"))
             result = subprocess.run(
                 ['nvim', '--headless', '-u', 'NONE', '-i', 'NONE', '-l', str(script)],
                 env=dict(os.environ, NVIM_CONFIG=str(ROOT / '.config/nvim')),

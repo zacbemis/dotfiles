@@ -6,6 +6,9 @@ map("n", "<leader>q", "<cmd>bdelete<CR>", { desc = "Close file tab" })
 map("n", "<leader>e", function()
   require("config.explorer").toggle()
 end, { desc = "Toggle sidebar / keep full-window explorer" })
+map("n", "<leader>k", function()
+  require("config.tab_navigation").enter()
+end, { desc = "Focus file tab bar" })
 
 -- Move between split windows; at the top, Ctrl-k focuses the file tab bar.
 map("n", "<C-h>", "<C-w>h", { desc = "Go to left window" })

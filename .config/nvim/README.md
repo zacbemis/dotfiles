@@ -118,6 +118,7 @@ expanded folders, and selection unchanged. Change the root explicitly with
 - `Shift-l` (`L`): enter the selected folder as the new root, or open a file
 - `Shift-h` (`H`): go up to the parent root, collapsing and selecting the folder you just left
 - `Ctrl-l`: move from the tree back into the editing window
+- `Space k`: focus the top file tab bar, including from the full-window explorer
 - `a`: create a file/folder (end the name with `/` for a folder)
 - `r`: rename
 - `d`: delete (with confirmation)
@@ -140,12 +141,13 @@ to switch files, or use `Shift-h` / `Shift-l` (previous / next in bar order).
 to close the buffer; unsaved changes are not discarded. These are file buffers,
 not Neovim tabpages (which represent separate window layouts).
 
-`Ctrl-k` moves to the window above, or focuses a one-row overlay on the tab
-bar when there is no window above. This is a real focusable window: `h` / `l`
-switch files in the editing split you came from, leaving other splits alone.
-`Enter`, `Esc`, or `Ctrl-j` close the overlay and return to that split.
-`Ctrl-k` while in the overlay stays there. From the full-window explorer,
-`Ctrl-k` restores the last editing file when file tabs exist, so `h` / `l` can
+`Space k` focuses a one-row overlay on the tab bar directly. `Ctrl-k` moves to
+the window above, or focuses the same overlay when there is no window above.
+This is a real focusable window: `h` / `l` switch files in the editing split you
+came from, leaving other splits alone. `Enter`, `Esc`, or `Ctrl-j` close the
+overlay and return to that split. `Space k` or `Ctrl-k` while in the overlay
+stays there. From the full-window explorer, either shortcut restores the last
+editing file when file tabs exist, so `h` / `l` can
 switch files and `Enter` returns to the selected file. With no open files, it keeps the explorer; `Space q` does nothing.
 `Space q` closes the selected file. Moving to another window dismisses the
 overlay too. The underlying native tab bar stays unchanged.
