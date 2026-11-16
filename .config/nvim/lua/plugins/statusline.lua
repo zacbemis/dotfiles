@@ -2,6 +2,15 @@ return {
   {
     "nvim-lualine/lualine.nvim",
     lazy = false,
+    config = function(_, opts)
+      local line = require("lualine")
+      line.setup(opts)
+      vim.api.nvim_create_autocmd("User", {
+        group = vim.api.nvim_create_augroup("PersonalStatusline", { clear = true }),
+        pattern = "PersonalNavigationModeChanged",
+        callback = function() line.refresh({ place = { "statusline" }, force = true }) end,
+      })
+    end,
     opts = {
       options = {
         theme = function()
@@ -25,7 +34,11 @@ return {
         section_separators = "",
       },
       sections = {
-        lualine_a = { { "mode", padding = 1 } },
+        lualine_a = { { function()
+          local navigation = package.loaded["config.navigation_mode"]
+          local label = navigation and navigation.label() or ""
+          return label ~= "" and label or require("lualine.utils.mode").get_mode()
+        end, padding = 1 } },
         lualine_b = { { "branch", padding = { left = 0, right = 1 } } },
         lualine_c = {
           {

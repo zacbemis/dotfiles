@@ -26,9 +26,9 @@ vim.cmd.colorscheme("habamax") -- Temporary fallback until the syntax theme load
 
 -- Indentation (filetype-specific settings may override these)
 opt.expandtab = true
-opt.tabstop = 2
-opt.shiftwidth = 2
-opt.softtabstop = 2
+opt.tabstop = 4
+opt.shiftwidth = 4
+opt.softtabstop = 4
 opt.smartindent = true
 
 -- Search
@@ -41,7 +41,9 @@ opt.splitbelow = true
 opt.splitright = true
 opt.mouse = "a"
 opt.updatetime = 250
-opt.timeoutlen = 400
+opt.timeout = false -- Wait indefinitely for leader/multi-key mappings.
+opt.ttimeout = true -- Still recognize terminal key sequences promptly.
+opt.ttimeoutlen = 50
 
 -- Store persistent undo in Neovim's standard state directory.
 local undo_dir = vim.fn.stdpath("state") .. "/undo"

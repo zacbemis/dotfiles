@@ -14,26 +14,46 @@ Standalone configuration using lazy.nvim, not LazyVim. Launch with `nvim`.
 - Treesitter highlighting/folds and local Brief (`.brf`) syntax support.
 - Git gutter signs, hunk staging/blame and branch/commit review with side-by-side diffs.
 - Git review includes staged/unstaged files, local/fetched remote branches and flat merge history without checkout.
+- Review sidebar matches the file explorer's connected tree, icons and Git badges; its top bar shares editor-tab surfaces and follows theme changes.
 - Fixed VS Code–inspired syntax colors with live Pywal/Matugen backgrounds.
 - PDFs open in the default browser.
 
 ## Main keys
+
+Space-prefixed and other multi-key mappings wait indefinitely; press `Esc` to cancel.
 
 | Key | Action |
 | --- | --- |
 | `Space w` / `Space q` | Save / close file or review tab; protect unsaved changes |
 | `Space e` | Toggle explorer or review sidebar |
 | `Space k` | Focus file-tab navigation; `h` / `l` switch files |
+| `Space h` / `Space l` | Previous / next Neovim tab (including Git review) |
+| `[b` / `]b` | Previous / next buffer |
+| `Shift-h` / `Shift-l` | Previous / next file tab; collapse / expand context in Git diffs |
 | `Ctrl-h/j/k/l` | Move between windows |
 | `Space ff` / `Space fg` | Find files / search text |
 | `Space gd` | Open Git review |
 | `gd` / `gr` / `K` | Definition / references / hover |
-| `Space rn` / `Space ca` / `Space cf` | Rename / code action / format |
+| `Space cd` | Diagnostic navigation mode (errors, warnings and info) |
+| `Space ce` | Error-only navigation mode |
+| `Space cg` | Git-hunk navigation mode (also in Git review) |
+| `Space ca` | Code actions |
+| `Space cr` | Rename symbol |
+| `Space cf` | Format code |
 | `Tab` / `Enter` | Accept completion / advance snippet or insert newline |
 | `g?` | Explorer/review help |
 
-Interactive `:q` / `:quit` quits **all** windows and tabs, protecting unsaved buffers.
-`:q!` discards unsaved changes across the application.
+In navigation modes, `n` / `N` move next / previous (counts supported); `Esc` exits.
+The status bar shows the active mode. Normal search mappings are restored on exit,
+and switching buffers/windows/tabs or entering insert mode also exits.
+`Space cd` shows the current line's diagnostics, or selects the next diagnostic if the line has none.
+Empty diagnostic/hunk lists and unavailable LSP actions report why nothing can happen.
+Rename, code actions and formatting need a language server supporting that action;
+use `:checkhealth vim.lsp` to check attachment and server health.
+
+`:q` / `:quit` uses normal Neovim behavior: close the current window, exiting if it is the last.
+`Space q` closes the current file buffer (across splits) or the Git review tab, protecting unsaved changes.
+Use `:qa` to quit all windows and tabs, or `:qa!` to discard all unsaved changes.
 
 ## Requirements
 

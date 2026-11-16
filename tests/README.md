@@ -16,6 +16,12 @@ python3 -m unittest discover -s tests -v
 
 Optional dependencies are skipped when unavailable. Installer and hardware actions use fixtures/mocks.
 
+Herdr's Rust shortcut helper has its own unit and mock-socket integration tests:
+
+```bash
+cargo test --manifest-path tools/herdr-control/Cargo.toml --locked
+```
+
 ## Desktop checks
 
 Run on an unlocked Hyprland session:

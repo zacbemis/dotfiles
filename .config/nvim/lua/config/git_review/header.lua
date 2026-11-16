@@ -3,6 +3,7 @@ local M = {}
 local api = vim.api
 
 function M.new(group)
+  require("config.git_review.style").setup()
   local tab, title, saved
   local header = {}
 
@@ -15,29 +16,31 @@ function M.new(group)
   function header:show()
     if api.nvim_get_current_tabpage() ~= tab then return end
     saved = saved or { tabline = vim.o.tabline, showtabline = vim.o.showtabline }
-    vim.o.tabline = "%#TabLineSel# " .. title .. " %=%#TabLineFill#"
+    -- End the selected surface before the fill, like an active editor file tab.
+    vim.o.tabline = "%#GitReviewTab# " .. title .. " %#GitReviewTabFill#%="
     vim.o.showtabline = 2
   end
 
   function header:update(review_tab, selection)
     tab = review_tab
-    local prefix, message
-    if selection.kind == "branch" then
-      prefix = selection.name
-    else
-      prefix = selection.branch_name or "(unknown branch)"
+    local function segment(highlight, text)
+      -- Git metadata is data, never tabline expressions or click targets.
+      return "%#" .. highlight .. "#" .. text:gsub("%c", " "):gsub("%%", "%%%%")
+    end
+    local branch = selection.kind == "branch" and selection.name or selection.branch_name or "(unknown branch)"
+    title = segment("GitReviewTabBranch", branch)
+    if selection.kind ~= "branch" then
+      local message
       if selection.kind == "commit" then
         local author = selection.author and selection.author ~= "" and selection.author or "Unknown author"
-        prefix = prefix .. " · " .. author
+        title = title .. segment("GitReviewTabMeta", " · " .. author)
         message = selection.subject ~= "" and selection.subject or "(no commit message)"
       else
         message = selection.kind == "staged" and "Staged changes" or "Unstaged changes"
       end
+      -- Truncate the message before sacrificing the branch/author prefix.
+      title = title .. segment("GitReviewTabMeta", " · ") .. "%<" .. segment("GitReviewTab", message)
     end
-    -- All Git metadata is data, never tabline expressions or click targets.
-    -- Truncate the message before sacrificing the branch/author prefix.
-    title = prefix:gsub("%c", " "):gsub("%%", "%%%%")
-    if message then title = title .. " · %<" .. message:gsub("%c", " "):gsub("%%", "%%%%") end
     self:show()
   end
 

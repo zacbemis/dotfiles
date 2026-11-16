@@ -18,17 +18,6 @@ return {
           vim.keymap.set(mode, key, action, { buffer = buf, silent = true, desc = desc })
         end
 
-        local function navigate(direction)
-          return function()
-            if vim.wo.diff then
-              vim.cmd.normal({ direction == "next" and "]c" or "[c", bang = true })
-            else
-              gs.nav_hunk(direction)
-            end
-          end
-        end
-        map("n", "]h", navigate("next"), "Next Git hunk")
-        map("n", "[h", navigate("prev"), "Previous Git hunk")
         map({ "n", "x" }, "<leader>ghs", ":Gitsigns stage_hunk<CR>", "Stage / unstage Git hunk")
         map({ "n", "x" }, "<leader>ghr", ":Gitsigns reset_hunk<CR>", "Reset Git hunk")
         map("n", "<leader>ghS", gs.stage_buffer, "Stage file")

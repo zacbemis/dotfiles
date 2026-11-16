@@ -80,20 +80,9 @@ function M.setup()
       map("gr", vim.lsp.buf.references, "Find references")
       map("gi", vim.lsp.buf.implementation, "Go to implementation")
       map("K", vim.lsp.buf.hover, "Hover documentation")
-      map("<leader>rn", vim.lsp.buf.rename, "Rename symbol")
-      map("<leader>ca", vim.lsp.buf.code_action, "Code action", { "n", "x" })
       map("<leader>cs", vim.lsp.buf.signature_help, "Signature help")
-      map("<leader>cf", function() vim.lsp.buf.format({ async = true }) end, "Format with LSP", { "n", "x" })
     end,
   })
-
-  vim.keymap.set("n", "<leader>cd", vim.diagnostic.open_float, { desc = "Show line diagnostics" })
-  vim.keymap.set("n", "[d", function()
-    vim.diagnostic.jump({ count = -vim.v.count1, float = true })
-  end, { desc = "Previous diagnostic" })
-  vim.keymap.set("n", "]d", function()
-    vim.diagnostic.jump({ count = vim.v.count1, float = true })
-  end, { desc = "Next diagnostic" })
 
   require("mason-lspconfig").setup({
     ensure_installed = M.servers,

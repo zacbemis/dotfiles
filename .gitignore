@@ -92,6 +92,9 @@
 !.config/Cursor/User/keybindings.json
 !.config/Cursor/User/snippets/
 
+# Rust helper build artifacts (keep Cargo.lock for reproducible installs).
+/tools/herdr-control/target/
+
 # Python runtime/test bytecode
 __pycache__/
 *.py[cod]

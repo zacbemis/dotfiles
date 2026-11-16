@@ -110,10 +110,12 @@ function M.enter()
       for index, element in ipairs(elements) do
         if element.id == previous then selected = index; break end
       end
-      -- Let the explorer restore an editor before asking Bufferline to select a file.
+      -- Create the editor BEFORE closing the lone tree window. Otherwise,
+      -- with another tab open, closing the tree can delete this entire tab.
+      -- Use an explicit local split so switchbuf cannot jump to a review pane.
+      target_win = api.nvim_open_win(elements[selected].id, true, { split = "right", win = target_win })
       require("nvim-tree.api").tree.close_in_this_tab()
-      target_win = api.nvim_get_current_win()
-      bufferline.go_to(selected, true)
+      api.nvim_set_current_win(target_win)
     end
   end
   bar_buf = api.nvim_create_buf(false, true)

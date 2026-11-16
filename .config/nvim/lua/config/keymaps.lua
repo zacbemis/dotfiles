@@ -1,5 +1,15 @@
 local map = vim.keymap.set
-require("config.quit").setup()
+require("config.lsp_actions").setup()
+
+map("n", "<leader>cd", function()
+  require("config.code_navigation").diagnostics(false)
+end, { desc = "Navigate diagnostics (n/N, Esc exits)" })
+map("n", "<leader>ce", function()
+  require("config.code_navigation").diagnostics(true)
+end, { desc = "Navigate errors (n/N, Esc exits)" })
+map("n", "<leader>cg", function()
+  require("config.code_navigation").git()
+end, { desc = "Navigate Git hunks (n/N, Esc exits)" })
 
 map("n", "<Esc>", "<cmd>nohlsearch<CR>", { desc = "Clear search highlighting" })
 map("n", "<leader>w", "<cmd>write<CR>", { desc = "Save file" })
@@ -29,12 +39,8 @@ map("n", "<C-l>", "<C-w>l", { desc = "Go to right window" })
 map("n", "<leader>sv", "<cmd>vsplit<CR>", { desc = "Vertical split" })
 map("n", "<leader>sh", "<cmd>split<CR>", { desc = "Horizontal split" })
 
-map("n", "<leader>h", function()
-  require("config.git_review").fold(false)
-end, { desc = "Collapse Git diff context" })
-map("n", "<leader>l", function()
-  require("config.git_review").fold(true)
-end, { desc = "Expand Git diff context" })
+map("n", "<leader>h", "<cmd>tabprevious<CR>", { desc = "Previous tab" })
+map("n", "<leader>l", "<cmd>tabnext<CR>", { desc = "Next tab" })
 map("n", "<S-h>", function()
   if require("config.git_review").fold(false) then return end
   vim.cmd.BufferLineCyclePrev()

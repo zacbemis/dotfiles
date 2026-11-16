@@ -2,6 +2,7 @@ local M = {}
 local api = vim.api
 
 function M.new(model, actions)
+  require("config.git_review.style").setup()
   local buffer = api.nvim_create_buf(false, true)
   local window, rows, remembered
   local namespace = api.nvim_create_namespace("GitReviewSidebar")
@@ -30,20 +31,19 @@ function M.new(model, actions)
   function sidebar:render(selected)
     selected = selected or self:current() or remembered
     rows = model:rows()
-    local lines, cursor = {}, 1
+    local lines, highlights = require("config.git_review.sidebar_render").rows(rows)
+    local cursor = 1
     for index, row in ipairs(rows) do
-      local marker = row.kind == "file" and (row.status or " ")
-        or row.kind == "more" and ">" or (row.expanded and "[-]" or "[+]")
-      lines[index] = string.rep("  ", row.depth) .. marker .. " " .. row.label:gsub("[\r\n\t]", " ")
       if row.id == selected then cursor = index end
     end
     vim.bo[buffer].modifiable = true
     api.nvim_buf_set_lines(buffer, 0, -1, false, lines)
     vim.bo[buffer].modifiable = false
     api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
-    for index, row in ipairs(rows) do
-      local highlight = row.kind == "file" and "Normal" or row.kind == "more" and "Comment" or "Directory"
-      api.nvim_buf_set_extmark(buffer, namespace, index - 1, 0, { end_col = #lines[index], hl_group = highlight })
+    for _, span in ipairs(highlights) do
+      api.nvim_buf_set_extmark(buffer, namespace, span.row, span.start, {
+        end_col = span.finish, hl_group = span.group,
+      })
     end
     remembered = rows[cursor] and rows[cursor].id
     if window and api.nvim_win_is_valid(window) then api.nvim_win_set_cursor(window, { cursor, 0 }) end
@@ -58,8 +58,9 @@ function M.new(model, actions)
     local selected = self:current() or remembered
     window = api.nvim_open_win(buffer, true, { split = "left", win = -1, width = 32 })
     for option, value in pairs({ number = false, relativenumber = false, signcolumn = "no", foldcolumn = "0",
-      statuscolumn = "", wrap = false, cursorline = true, winfixwidth = true,
-      winhighlight = "Normal:NvimTreeNormal,NormalNC:NvimTreeNormalNC,CursorLine:NvimTreeCursorLine,EndOfBuffer:NvimTreeEndOfBuffer" }) do
+      statuscolumn = "", wrap = false, cursorline = true, cursorlineopt = "line", winfixwidth = true,
+      list = false, spell = false, colorcolumn = "", fillchars = "eob: ",
+      winhighlight = "Normal:GitReviewNormal,NormalNC:GitReviewNormalNC,CursorLine:GitReviewCursorLine,EndOfBuffer:GitReviewEndOfBuffer,WinSeparator:GitReviewWinSeparator" }) do
       vim.wo[window][option] = value
     end
     self:render(selected)
@@ -112,7 +113,7 @@ function M.new(model, actions)
   map("<leader>q", actions.close, "Close Git review")
   map("<leader>e", actions.toggle_sidebar, "Toggle review browser")
   map("g?", function()
-    vim.notify("Git branches\nl expand/open  L make root  h collapse/parent  H parent root / branch list\ns stage/unstage  R refresh  Space e toggle sidebar\nSpace h/l collapse/open diff context  Space q close review  :q quit Neovim")
+    vim.notify("Git branches\nl expand/open  L make root  h collapse/parent  H parent root / branch list\ns stage/unstage  R refresh  Space e toggle sidebar\nH/L collapse/open context in diff panes  Space q close review  :q close window")
   end, "Show review controls")
   return sidebar
 end

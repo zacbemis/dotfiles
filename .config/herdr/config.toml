@@ -24,12 +24,38 @@ accent = "#5f4a09"
 toggle_sidebar = "alt+b"
 previous_tab = "alt+h"
 next_tab = "alt+l"
-new_tab = "alt+n"
+new_tab = "" # Alt+N uses the adjacent-tab command below.
 new_workspace = "alt+shift+n"
 previous_workspace = "alt+k"
 next_workspace = "alt+j"
 close_tab = "alt+q"
 close_workspace = "alt+shift+q"
+
+# Rust helper: install from tools/herdr-control (see its README).
+[[keys.command]]
+key = "alt+n"
+type = "shell"
+command = '"$HOME/.local/bin/herdr-control" new-tab'
+
+[[keys.command]]
+key = "alt+shift+h"
+type = "shell"
+command = '"$HOME/.local/bin/herdr-control" tab-left'
+
+[[keys.command]]
+key = "alt+shift+l"
+type = "shell"
+command = '"$HOME/.local/bin/herdr-control" tab-right'
+
+[[keys.command]]
+key = "alt+shift+j"
+type = "shell"
+command = '"$HOME/.local/bin/herdr-control" workspace-down'
+
+[[keys.command]]
+key = "alt+shift+k"
+type = "shell"
+command = '"$HOME/.local/bin/herdr-control" workspace-up'
 
 [ui]
 confirm_close = false

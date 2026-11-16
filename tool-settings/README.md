@@ -39,6 +39,9 @@ Review before applying; credentials and trust decisions are not exported.
 
 ## Optional dependencies
 
+- Herdr shortcut helper (Rust/Cargo 1.89+):
+  `cargo install --path tools/herdr-control --locked --root "$HOME/.local" --force`.
+  Required for Alt+N and Alt+Shift+H/J/K/L; see [behavior and tests](../tools/herdr-control/README.md).
 - OpenCode plugin: `npm install --prefix ~/.config/opencode`.
 - Claude plugin: `claude plugin install clangd-lsp@claude-plugins-official`.
 - Editor extensions: `xargs -r -n 1 code --install-extension < tool-settings/vscode-extensions.txt`
