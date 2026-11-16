@@ -19,6 +19,9 @@ return {
         end
 
         local function open_file(node)
+          -- replace_tree_buffer abandons the tree window without saving its
+          -- cursor. Capture the selected path before opening the file.
+          require("config.explorer_state").remember()
           if #vim.api.nvim_tabpage_list_wins(0) == 1 then
             api.node.open.replace_tree_buffer(node)
           else

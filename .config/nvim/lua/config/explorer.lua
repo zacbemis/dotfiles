@@ -1,4 +1,5 @@
 local M = {}
+local location = require("config.explorer_state")
 
 local function empty_buffer(buf)
   return vim.api.nvim_buf_is_valid(buf)
@@ -10,11 +11,30 @@ local function empty_buffer(buf)
 end
 
 local function open_in_place(buf)
-  require("nvim-tree.api").tree.open({ current_window = true })
+  M.open({ current_window = true })
   -- Remove only the unused placeholder, never unsaved text.
   if vim.api.nvim_get_current_buf() ~= buf and empty_buffer(buf) then
     vim.api.nvim_buf_delete(buf, { force = false })
   end
+end
+
+function M.open(opts)
+  local tree = require("nvim-tree.api").tree
+  opts = vim.tbl_extend("force", {}, opts or {})
+  if tree.is_visible() then
+    tree.open(opts)
+    location.remember()
+    return
+  end
+  local root = tree.get_nodes()
+  if root and not opts.path and vim.fn.isdirectory(root.absolute_path) ~= 1 then opts.path = vim.fn.getcwd() end
+  local saved = location.location(opts.path or (root and root.absolute_path))
+  if not root and not opts.path and saved then opts.path = saved.root end
+  tree.open(opts)
+  -- nvim-tree restores its row cursor at the end of open(); resolve our path
+  -- only afterwards, when the full-screen/sidebar layout is ready.
+  if not opts.find_file then location.restore(saved) end
+  location.remember()
 end
 
 function M.toggle()
@@ -26,6 +46,7 @@ function M.toggle()
     for _, win in ipairs(wins) do
       if vim.api.nvim_win_get_config(win).relative == ""
         and vim.bo[vim.api.nvim_win_get_buf(win)].filetype ~= "NvimTree" then
+        location.remember()
         api.tree.toggle()
         return
       end
@@ -39,7 +60,7 @@ function M.toggle()
     -- Recover an empty window left by a direct :NvimTreeClose, too.
     open_in_place(buf)
   else
-    api.tree.toggle()
+    M.open()
   end
 end
 
@@ -72,7 +93,10 @@ local function after_last_file()
 
   local api = require("nvim-tree.api")
   -- A sidebar must be closed before replacing the editor window with the tree.
-  if api.tree.is_visible() then api.tree.close() end
+  if api.tree.is_visible() then
+    location.remember()
+    api.tree.close()
+  end
   if not vim.api.nvim_win_is_valid(target) then return end
   vim.api.nvim_set_current_win(target)
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
@@ -114,6 +138,7 @@ function M.setup_branches()
 end
 
 function M.setup()
+  location.setup()
   local group = vim.api.nvim_create_augroup("StartupExplorer", { clear = true })
   local reading_stdin = false
   vim.api.nvim_create_autocmd("StdinReadPre", {
@@ -126,7 +151,8 @@ function M.setup()
     callback = function()
       vim.schedule(function()
         -- Leave explicit files, stdin, sessions, and startup layouts alone.
-        if reading_stdin or vim.fn.argc() ~= 0 or #vim.api.nvim_list_wins() ~= 1 then return end
+        if reading_stdin or vim.fn.argc() ~= 0 or vim.v.this_session ~= ""
+          or #vim.api.nvim_list_wins() ~= 1 then return end
         local buf = vim.api.nvim_get_current_buf()
         if empty_buffer(buf) then open_in_place(buf) end
       end)
