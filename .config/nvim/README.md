@@ -187,17 +187,19 @@ this machine; text search requires ripgrep on other machines.
 2. **Staged files**
 3. **Most recent commit**, followed by older commits on the current branch
 
-Sections and commits behave like folders. Their files are grouped into directories.
+Sections and commits behave like folders. Changed files appear directly below each
+section or commit, sorted by filename, without directory rows or path prefixes.
+Files with the same name remain separate entries targeting their original paths.
 The browser uses ordinary text markers instead of requiring Nerd Font icons.
 
 - `j` / `k`: navigate the sidebar.
-- `l`: expand a section, commit, or directory; open a file in the diff area.
-- `L`: make the selected section, commit, or directory the browser root; open a file.
+- `l`: expand a section or commit; open a file in the diff area.
+- `L`: make the selected section or commit the browser root; open a file.
 - `h`: collapse an expanded folder, or move to and collapse its parent.
 - `H`: go up from the current browser root, selecting and collapsing the root just left.
 - `Enter`: toggle a folder or open a file.
 - `Space e`: focus the review sidebar from either diff pane.
-- `s`: stage an unstaged file/directory/section, or unstage a staged one.
+- `s`: stage an unstaged file/section, or unstage a staged one.
 - `R`: refresh. The browser also refreshes after writes, on focus, and while active.
 - `Older commits...`: load the next page of history with `l` or `Enter`.
 - `Space q` or `:q`: exit the entire review and restore the previous editing layout.

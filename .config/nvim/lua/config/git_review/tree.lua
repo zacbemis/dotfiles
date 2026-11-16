@@ -13,33 +13,15 @@ function M.new(root, repository)
 
   local function add_files(section, files)
     for _, file in ipairs(files) do
-      local parent, prefix = section, ""
-      local parts = vim.split(file.path, "/", { plain = true })
-      for index = 1, #parts - 1 do
-        prefix = prefix == "" and parts[index] or prefix .. "/" .. parts[index]
-        local id = section.id .. ":directory:" .. prefix
-        if not nodes[id] then
-          local directory = add({ id = id, kind = "directory", label = parts[index],
-            path = prefix, section = section.id, parent = parent.id })
-          parent.children[#parent.children + 1] = directory.id
-        end
-        parent = nodes[id]
-      end
-      local node = add({ id = section.id .. ":file:" .. file.path, kind = "file", label = parts[#parts],
-        path = file.path, status = file.status, section = section.id, parent = parent.id })
-      parent.children[#parent.children + 1] = node.id
+      local node = add({ id = section.id .. ":file:" .. file.path, kind = "file", label = vim.fs.basename(file.path),
+        path = file.path, status = file.status, section = section.id, parent = section.id })
+      section.children[#section.children + 1] = node.id
     end
-    local function sort(node)
-      table.sort(node.children, function(a, b)
-        local left, right = nodes[a], nodes[b]
-        if left.kind ~= right.kind then return left.kind == "directory" end
-        return left.label < right.label
-      end)
-      for _, id in ipairs(node.children) do
-        if nodes[id].kind == "directory" then sort(nodes[id]) end
-      end
-    end
-    sort(section)
+    table.sort(section.children, function(a, b)
+      local left, right = nodes[a], nodes[b]
+      if left.label == right.label then return left.path < right.path end
+      return left.label < right.label
+    end)
   end
 
   local function load(node)

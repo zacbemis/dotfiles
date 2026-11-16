@@ -61,11 +61,83 @@ assert(repository.commits(root, 1)[1].subject == '', 'empty commit subjects must
 print('PASS: status, commit order, root commits, filenames, tree roots, staging, pagination')
 '''
 
+FLAT_FILES = r'''
+local root = vim.fn.getcwd()
+local status = {
+  unstaged = {
+    {path='z/deep/shared.lua', status='M'},
+    {path='nested/alpha.lua', status='A'},
+    {path='a/shared.lua', status='D'},
+  },
+  staged = {{path='staged/deep/file.lua', status='M'}},
+}
+local function move(from, to, path)
+  for index, file in ipairs(status[from]) do
+    if file.path == path then
+      table.insert(status[to], table.remove(status[from], index))
+      return
+    end
+  end
+  error('Unexpected Git path: ' .. tostring(path))
+end
+local repository = {
+  status = function() return status end,
+  commits = function() return {{hash='commit', short='abc123', subject='nested files'}} end,
+  commit_files = function() return {
+    {path='z/deep/shared.lua', status='M'},
+    {path='nested/alpha.lua', status='A'},
+    {path='a/shared.lua', status='D'},
+  }, 'parent' end,
+  stage = function(directory, path) assert(directory == root); move('unstaged', 'staged', path) end,
+  unstage = function(directory, path) assert(directory == root); move('staged', 'unstaged', path) end,
+}
+local model = require('config.git_review.tree').new(root, repository)
+local function check_files(section, paths)
+  model:drill(section)
+  local rows = model:rows()
+  assert(#rows == #paths + 1, 'only files should appear beneath a section or commit')
+  for index, path in ipairs(paths) do
+    local row = rows[index + 1]
+    assert(row.kind == 'file' and row.depth == 1, 'nested files must be direct children')
+    assert(row.label == vim.fs.basename(path) and not row.label:find('/', 1, true))
+    assert(model:selection(row.id).path == path, 'retain full paths for Git operations')
+  end
+  model:up()
+end
+local paths = {'nested/alpha.lua', 'a/shared.lua', 'z/deep/shared.lua'}
+check_files('unstaged', paths)
+check_files('staged', {'staged/deep/file.lua'})
+check_files('commit', paths)
+local selection = model:selection('commit:file:z/deep/shared.lua')
+assert(selection.hash == 'commit' and selection.parent == 'parent')
+assert(model:stage('unstaged:file:z/deep/shared.lua') == 'staged:file:z/deep/shared.lua')
+check_files('staged', {'staged/deep/file.lua', 'z/deep/shared.lua'})
+assert(model:stage('staged:file:z/deep/shared.lua') == 'unstaged:file:z/deep/shared.lua')
+check_files('unstaged', paths)
+check_files('commit', paths)
+model:expand('unstaged')
+local selected
+local sidebar = require('config.git_review.sidebar').new(model, {
+  select = function(file) selected = file end,
+  stage = function() end, refresh = function() end, close = function() end,
+})
+sidebar:attach()
+for _, path in ipairs({'a/shared.lua', 'z/deep/shared.lua'}) do
+  sidebar:render('unstaged:file:' .. path)
+  for _, line in ipairs(vim.api.nvim_buf_get_lines(0, 0, -1, false)) do
+    assert(not line:find('/', 1, true), 'sidebar must not display directory paths')
+  end
+  vim.api.nvim_feedkeys('l', 'xt', false)
+  assert(selected.path == path, 'duplicate basenames must open their own full paths')
+end
+sidebar:dispose()
+print('PASS: flat filenames, stable duplicate order, original paths, staging, sidebar selection')
+'''
+
 WORKFLOW = r'''
 local api = vim.api
 vim.g.mapleader = ' '
 vim.opt.hidden = true
-vim.opt.columns = 140
 require('config.keymaps')
 vim.cmd('runtime plugin/diffview.lua')
 local spec = require('plugins.diffview')[1]
@@ -176,10 +248,13 @@ press('s')
 assert(contains('Staged files (2)'), 'staging must move the file into the staged section')
 press('s')
 assert(contains('Staged files (1)'), 'unstaging must move the file back')
-choose('nested')
+assert(contains('new file.txt') and not contains('nested'), 'nested files must appear without folders')
+choose('new file.txt')
+press('l')
+preview('new')
+press(' e')
+choose('Unstaged files')
 press('L')
-assert(lines()[1]:find('nested', 1, true))
-press('H')
 assert(lines()[1]:find('Unstaged files', 1, true))
 press('H')
 assert(lines()[1]:find('Git review', 1, true))
@@ -291,6 +366,9 @@ end
 
     def test_repository_and_tree(self):
         self.run_lua(MODEL)
+
+    def test_flat_filenames_preserve_git_paths(self):
+        self.run_lua(FLAT_FILES)
 
     @unittest.skipUnless(all((PLUGINS / name).is_dir() for name in DEPENDENCIES), 'Plugins are not installed')
     def test_review_workflow(self):

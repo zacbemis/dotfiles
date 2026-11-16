@@ -85,7 +85,7 @@ function M.new(model, actions)
     end, { buffer = buffer, silent = true, nowait = true, desc = description })
   end
   map("l", function() navigate("expand") end, "Expand / open file")
-  map("L", function() navigate("drill") end, "Make section or directory the root / open file")
+  map("L", function() navigate("drill") end, "Make section or commit the root / open file")
   map("h", function() navigate("collapse") end, "Collapse / go to parent")
   map("H", function() sidebar:render(model:up()) end, "Return to parent root")
   map("<CR>", function() navigate("toggle") end, "Toggle folder / open file")
