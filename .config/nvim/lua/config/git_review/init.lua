@@ -9,54 +9,64 @@ local function notify(message)
 end
 
 local function comparison(selection)
-  return table.concat({ selection.kind, selection.hash or "", selection.path or "" }, "\0")
+  return table.concat({ selection.kind, selection.hash or "", selection.path or "",
+    selection.branch_name or "", selection.author or "", selection.id or "" }, "\0")
 end
 
 local function dispose(current)
   if current.timer then current.timer:stop(); current.timer:close() end
   api.nvim_clear_autocmds({ group = current.group })
+  current.header:hide()
   current.sidebar:dispose()
   if session == current then session = nil end
 end
 
-local function replace_comparison(current, resolve)
+local function update_header(current)
+  if session ~= current or current.phase ~= "ready" or api.nvim_get_current_tabpage() ~= current.tab then return end
+  local context = current.sidebar:focused() and current.sidebar:context() or nil
+  current.header:update(current.tab, context or current.selection)
+end
+
+local function update_comparison(current, resolve, refresh)
   current.phase = "switching"
   current.sidebar:remember()
-  renderer.close(current.tab)
-  local resolved, selection, cursor = pcall(resolve)
-  if not resolved then dispose(current); notify(selection); return false end
-  local opened, tab = pcall(renderer.open, selection)
-  if not opened then dispose(current); notify(tab); return false end
-  current.tab, current.selection = tab, selection
-  current.sidebar:attach()
-  if cursor then current.sidebar:render(cursor) end
+  local ok, selection, cursor = pcall(resolve)
+  if ok then
+    local updated, err = pcall(renderer.select, current.tab, selection, refresh)
+    if not updated then ok, selection = false, err end
+  end
   current.phase = "ready"
+  if not ok then notify(selection); return false end
+  current.selection = selection
+  if cursor then current.sidebar:render(cursor) end
+  update_header(current)
   return true
 end
 
-function M.select(selection, focus_file)
+function M.select(selection, focus_file, refresh)
   local current = session
   if not current or current.phase ~= "ready" then return end
   local allowed, reason = renderer.can_leave(current.tab)
   if not allowed then notify(reason); return end
-  if comparison(selection) ~= comparison(current.selection)
-    and not replace_comparison(current, function() return selection end) then return end
+  if (refresh or comparison(selection) ~= comparison(current.selection))
+    and not update_comparison(current, function() return selection end, refresh) then return end
   if focus_file ~= false then renderer.focus_file(current.tab) else current.sidebar:focus() end
+  update_header(current)
 end
 
 function M.refresh(force)
   local current = session
   if not current or current.phase ~= "ready" or api.nvim_get_current_tabpage() ~= current.tab then return end
   local changed = current.model:refresh()
-  if changed then
+  if changed or force then
     local window = api.nvim_get_current_win()
     local in_sidebar = vim.bo.filetype == "GitReview"
     current.sidebar:render()
     local selection = current.model:selection(current.selection.id) or current.model:initial_selection()
-    M.select(selection, not in_sidebar)
+    M.select(selection, not in_sidebar, true)
     if api.nvim_win_is_valid(window) then api.nvim_set_current_win(window) end
+    update_header(current)
   end
-  if force and session == current then vim.cmd.DiffviewRefresh() end
 end
 
 function M.stage(id)
@@ -68,17 +78,42 @@ function M.stage(id)
   end
   local allowed, reason = renderer.can_leave(current.tab)
   if not allowed then notify(reason); return end
-  replace_comparison(current, function()
+  update_comparison(current, function()
     local destination = current.model:stage(id)
     return current.model:selection(destination) or current.model:initial_selection(), destination
-  end)
+  end, true)
 end
 
 function M.focus_sidebar()
   if session and session.phase == "ready" then
     api.nvim_set_current_tabpage(session.tab)
     session.sidebar:focus()
+    update_header(session)
   end
+end
+
+function M.is_active()
+  return session ~= nil and session.phase == "ready" and api.nvim_get_current_tabpage() == session.tab
+end
+
+function M.fold(open)
+  if not M.is_active() then return false end
+  renderer.fold(session.tab, open)
+  return true
+end
+
+function M.toggle_sidebar()
+  local current = session
+  if not M.is_active() then return false end
+  if current.sidebar:visible() then
+    local focused = vim.bo.filetype == "GitReview"
+    current.sidebar:hide()
+    if focused then renderer.focus_file(current.tab) end
+  else
+    current.sidebar:focus()
+  end
+  update_header(current)
+  return true
 end
 
 function M.close()
@@ -117,23 +152,25 @@ function M.open()
   local current = { phase = "opening", model = model,
     origin_tab = api.nvim_get_current_tabpage(), origin_window = api.nvim_get_current_win(),
     group = api.nvim_create_augroup("GitReviewSession", { clear = true }) }
+  current.header = require("config.git_review.header").new(current.group)
   current.sidebar = require("config.git_review.sidebar").new(model, {
     select = M.select, stage = M.stage, refresh = M.refresh, close = M.close,
+    toggle_sidebar = M.toggle_sidebar,
+    context_changed = function() update_header(current) end,
   })
   current.selection = model:initial_selection()
   session = current
   local opened, tab = pcall(renderer.open, current.selection)
   if not opened then dispose(current); notify(tab); return end
   current.tab = tab
+  current.header:update(tab, current.selection)
   current.sidebar:attach()
   current.phase = "ready"
-  api.nvim_create_autocmd("QuitPre", {
+  update_header(current)
+  api.nvim_create_autocmd({ "WinEnter", "TabEnter", "CursorMoved" }, {
     group = current.group,
-    callback = function()
-      if session == current and api.nvim_get_current_tabpage() == current.tab then
-        local closed, reason = M.close()
-        if not closed then error(reason, 0) end
-      end
+    callback = function(event)
+      if event.event ~= "CursorMoved" or current.sidebar:focused() then update_header(current) end
     end,
   })
   api.nvim_create_autocmd({ "BufWritePost", "FocusGained" }, {

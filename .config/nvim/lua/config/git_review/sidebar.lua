@@ -19,6 +19,14 @@ function M.new(model, actions)
     end
   end
 
+  function sidebar:focused()
+    return self:visible() and api.nvim_get_current_win() == window
+  end
+
+  function sidebar:context()
+    return model:context(self:current())
+  end
+
   function sidebar:render(selected)
     selected = selected or self:current() or remembered
     rows = model:rows()
@@ -37,11 +45,13 @@ function M.new(model, actions)
       local highlight = row.kind == "file" and "Normal" or row.kind == "more" and "Comment" or "Directory"
       api.nvim_buf_set_extmark(buffer, namespace, index - 1, 0, { end_col = #lines[index], hl_group = highlight })
     end
+    remembered = rows[cursor] and rows[cursor].id
     if window and api.nvim_win_is_valid(window) then api.nvim_win_set_cursor(window, { cursor, 0 }) end
+    actions.context_changed()
   end
 
   function sidebar:remember()
-    remembered = self:current()
+    remembered = self:current() or remembered
   end
 
   function sidebar:attach()
@@ -58,6 +68,13 @@ function M.new(model, actions)
   function sidebar:focus()
     if not self:visible() then self:attach() end
     api.nvim_set_current_win(window)
+  end
+
+  function sidebar:hide()
+    if not self:visible() then return end
+    self:remember()
+    api.nvim_win_close(window, true)
+    window = nil
   end
 
   function sidebar:visible()
@@ -85,7 +102,7 @@ function M.new(model, actions)
     end, { buffer = buffer, silent = true, nowait = true, desc = description })
   end
   map("l", function() navigate("expand") end, "Expand / open file")
-  map("L", function() navigate("drill") end, "Make section or commit the root / open file")
+  map("L", function() navigate("drill") end, "Make branch, section or commit the root / open file")
   map("h", function() navigate("collapse") end, "Collapse / go to parent")
   map("H", function() sidebar:render(model:up()) end, "Return to parent root")
   map("<CR>", function() navigate("toggle") end, "Toggle folder / open file")
@@ -93,9 +110,9 @@ function M.new(model, actions)
   map("s", function() actions.stage(sidebar:current()) end, "Stage / unstage selection")
   map("R", function() actions.refresh(true) end, "Refresh Git review")
   map("<leader>q", actions.close, "Close Git review")
-  map("<leader>e", function() sidebar:focus() end, "Focus review browser")
+  map("<leader>e", actions.toggle_sidebar, "Toggle review browser")
   map("g?", function()
-    vim.notify("Git review\nl expand/open  L make root  h collapse/parent  H parent root\ns stage/unstage  R refresh  Space q / :q close review")
+    vim.notify("Git branches\nl expand/open  L make root  h collapse/parent  H parent root / branch list\ns stage/unstage  R refresh  Space e toggle sidebar\nSpace h/l collapse/open diff context  Space q close review  :q quit Neovim")
   end, "Show review controls")
   return sidebar
 end

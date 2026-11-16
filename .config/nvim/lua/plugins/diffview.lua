@@ -27,11 +27,11 @@ return {
       },
       keymaps = {
         view = {
-          ["<leader>e"] = function() require("config.git_review").focus_sidebar() end,
+          ["<leader>e"] = function() require("config.git_review").toggle_sidebar() end,
           ["<leader>q"] = function() require("config.git_review").close() end,
         },
         file_panel = {
-          ["<leader>e"] = function() require("config.git_review").focus_sidebar() end,
+          ["<leader>e"] = function() require("config.git_review").toggle_sidebar() end,
           ["<leader>q"] = function() require("config.git_review").close() end,
         },
       },

@@ -42,13 +42,45 @@ function M.status(root)
   return { unstaged = unstaged, staged = staged }
 end
 
-function M.commits(root, limit)
-  local _, code = run(root, { "rev-parse", "--verify", "HEAD" }, true)
+function M.branches(root)
+  local current, code = run(root, { "symbolic-ref", "--quiet", "HEAD" }, true)
+  current = code == 0 and vim.trim(current) or nil
+  local branches, found = {}, false
+  local output = run(root, { "for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)%00",
+    "refs/heads/", "refs/remotes/" })
+  for line in output:gmatch("[^\n]+") do
+    local values = fields(line)
+    if values[3] == "" then -- Exclude aliases such as origin/HEAD.
+      local ref = values[1]
+      local branch = { ref = ref, hash = values[2], current = ref == current,
+        remote = ref:sub(1, 13) == "refs/remotes/",
+        name = ref:gsub("^refs/heads/", ""):gsub("^refs/remotes/", "") }
+      branches[#branches + 1] = branch
+      found = found or branch.current
+    end
+  end
+  if not found then
+    local hash, head_code = run(root, { "rev-parse", "--verify", "HEAD" }, true)
+    hash = head_code == 0 and vim.trim(hash) or nil
+    branches[#branches + 1] = { ref = current or "HEAD", hash = hash, current = true, remote = false,
+      name = current and current:gsub("^refs/heads/", "") or ("Detached HEAD (" .. (hash or "unknown"):sub(1, 7) .. ")") }
+  end
+  table.sort(branches, function(a, b)
+    if a.current ~= b.current then return a.current end
+    if a.remote ~= b.remote then return not a.remote end
+    return a.name < b.name
+  end)
+  return branches
+end
+
+function M.commits(root, ref, limit)
+  local _, code = run(root, { "rev-parse", "--verify", "--end-of-options", ref .. "^{commit}" }, true)
   if code ~= 0 then return {} end
-  local values = fields(run(root, { "log", "-z", "--format=%H%x00%h%x00%s", "--max-count=" .. limit }))
-  local commits = {}
-  for index = 1, #values, 3 do
-    commits[#commits + 1] = { hash = values[index], short = values[index + 1], subject = values[index + 2] }
+  local args = { "log", "--topo-order", "-z", "--format=%H%x00%h%x00%s%x00%aN%x00%P", "--max-count=" .. limit, ref, "--" }
+  local values, commits = fields(run(root, args)), {}
+  for index = 1, #values, 5 do
+    commits[#commits + 1] = { hash = values[index], short = values[index + 1], subject = values[index + 2],
+      author = values[index + 3], parents = vim.split(values[index + 4], " ", { trimempty = true }) }
   end
   return commits
 end

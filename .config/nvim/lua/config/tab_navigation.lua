@@ -79,6 +79,8 @@ local function cycle(direction)
 end
 
 function M.enter()
+  -- Git review uses a commit header, not a navigable file tab bar.
+  if require("config.git_review").is_active() then return end
   if M.active then
     return
   end
