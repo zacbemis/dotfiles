@@ -96,6 +96,8 @@ DEV_USER="$(id -un)"
 DEV_UID="$(id -u)"
 USER_HOME="$(getent passwd "$DEV_USER" | cut -d: -f6)"
 [[ -n "$USER_HOME" && -d "$USER_HOME" ]] || die "Cannot determine home for $DEV_USER"
+AGENT_DEV_DIR="${AGENT_DEV_DIR:-$USER_HOME/agent-dev}"
+PLAYWRIGHT="$AGENT_DEV_DIR/node_modules/.bin/playwright"
 
 export PATH="$USER_HOME/.local/bin:$PATH"
 
@@ -237,7 +239,6 @@ fi
 # ----------------------------- Browser testing -----------------------------
 
 if [[ "$INSTALL_BROWSER_MATRIX" == 1 ]]; then
-    PLAYWRIGHT="$USER_HOME/node_modules/.bin/playwright"
     if [[ -x "$PLAYWRIGHT" ]]; then
         log "Installing version-matched Playwright Chromium, Firefox, and WebKit"
         export PLAYWRIGHT_BROWSERS_PATH="$USER_HOME/.cache/ms-playwright"
@@ -270,7 +271,7 @@ SYSCTL
     sudo sysctl --load=/etc/sysctl.d/90-agent-development.conf
 fi
 
-install -d -m 700 "$USER_HOME/agent-runs"
+install -d -m 700 "$AGENT_DEV_DIR/agent-runs"
 
 # Install a safer helper for executing tests in a disposable container. It does
 # not mount credentials, HOME, or docker.sock. Network is disabled unless the
@@ -444,9 +445,9 @@ for tool in \
     check_tool "$tool"
 done
 
-if [[ -x "$USER_HOME/node_modules/.bin/playwright" ]]; then
+if [[ -x "$PLAYWRIGHT" ]]; then
     printf '\nPlaywright browser inventory:\n'
-    "$USER_HOME/node_modules/.bin/playwright" install --list
+    "$PLAYWRIGHT" install --list
 fi
 
 printf '\nDocker access is root-equivalent when using the rootful docker group.\n'
