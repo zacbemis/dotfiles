@@ -24,6 +24,7 @@ Space-prefixed and other multi-key mappings wait indefinitely; press `Esc` to ca
 
 | Key | Action |
 | --- | --- |
+| `::` | Open editable command-history split; `Enter` runs the current line, `Space q` closes |
 | `Space w` / `Space q` | Save / close file or review tab; protect unsaved changes |
 | `Space e` | Toggle explorer or review sidebar |
 | `Space k` | Focus file-tab navigation; `h` / `l` switch files |
@@ -42,6 +43,9 @@ Space-prefixed and other multi-key mappings wait indefinitely; press `Esc` to ca
 | `Space cf` | Format code |
 | `Tab` / `Enter` | Accept completion / advance snippet or insert newline |
 | `g?` | Explorer/review help |
+
+Command history is a regular scratch split: `Ctrl-j/k` moves into/out of it, and
+`Ctrl-c` does not close it. Edit a previous command or type a new one on the blank last line.
 
 In navigation modes, `n` / `N` move next / previous (counts supported); `Esc` exits.
 The status bar shows the active mode. Normal search mappings are restored on exit,

@@ -1,6 +1,14 @@
 local map = vim.keymap.set
 require("config.lsp_actions").setup()
 
+-- Open an editable history split with :: without delaying a single :.
+map("c", ":", function()
+  if vim.fn.getcmdtype() == ":" and vim.fn.getcmdline() == "" and vim.fn.getcmdwintype() == "" then
+    return "<C-c><Cmd>lua require('config.command_history').open()<CR>"
+  end
+  return ":"
+end, { expr = true, desc = "Open command history from an empty command line" })
+
 map("n", "<leader>cd", function()
   require("config.code_navigation").diagnostics(false)
 end, { desc = "Navigate diagnostics (n/N, Esc exits)" })

@@ -15,6 +15,77 @@ end
 local function line() return api.nvim_win_get_cursor(0)[1] end
 '''
 
+COMMAND_HISTORY = PRELUDE + r'''
+local source = api.nvim_get_current_win()
+vim.fn.histadd(':', 'let g:history_shortcut_ran = 1')
+press('::')
+local window, buffer = api.nvim_get_current_win(), api.nvim_get_current_buf()
+assert(window ~= source and vim.fn.getcmdwintype() == '', ':: must immediately open an ordinary history split')
+assert(vim.b.command_history and vim.bo.buftype == 'nofile' and not vim.bo.buflisted)
+assert(vim.tbl_contains(api.nvim_buf_get_lines(buffer, 0, -1, false), 'let g:history_shortcut_ran = 1'))
+press('k<CR>')
+assert(vim.g.history_shortcut_ran == 1, 'Enter must execute the selected history entry')
+assert(api.nvim_get_current_win() == source and not api.nvim_buf_is_valid(buffer))
+press('::')
+window, buffer = api.nvim_get_current_win(), api.nvim_get_current_buf()
+press('<C-c>')
+assert(api.nvim_get_current_win() == window and api.nvim_win_is_valid(window), 'Ctrl-c must leave history open')
+press('<C-k>')
+assert(api.nvim_get_current_win() == source, 'Ctrl-k must leave history for the editor')
+press('<C-j>')
+assert(api.nvim_get_current_win() == window, 'Ctrl-j must return to history')
+press(' q')
+assert(api.nvim_get_current_win() == source and not api.nvim_buf_is_valid(buffer), 'Space q must close history')
+
+local command_type, text
+vim.keymap.set('c', '<F2>', function()
+  command_type, text = vim.fn.getcmdtype(), vim.fn.getcmdline()
+  return ''
+end, {expr=true})
+press(':<F2><Esc>')
+assert(command_type == ':' and text == '', 'a single : must enter the command line immediately')
+press(':echo "a:b"<F2><Esc>')
+assert(text == 'echo "a:b"', 'colons inside commands must remain literal')
+for _, search in ipairs({'/', '?'}) do
+  press(search .. ':<F2><Esc>')
+  assert(command_type == search and text == ':', 'search colons must remain literal')
+end
+assert(#api.nvim_tabpage_list_wins(0) == 1, 'ordinary command and search input must not open history')
+'''
+
+COMMAND_HISTORY_EDITING = PRELUDE + r'''
+local source, source_buffer = api.nvim_get_current_win(), api.nvim_get_current_buf()
+api.nvim_buf_set_lines(0, 0, -1, false, {'editor content'})
+vim.fn.histdel('cmd')
+press('::')
+assert(vim.deep_equal(api.nvim_buf_get_lines(0, 0, -1, false), {''}), 'empty history must still be editable')
+local window, buffer = api.nvim_get_current_win(), api.nvim_get_current_buf()
+press('ilet g:history_edited = 42<Esc>')
+press('<C-k>')
+press('::')
+assert(api.nvim_get_current_win() == window and api.nvim_get_current_buf() == buffer,
+  'reopening must focus the existing split without losing edits')
+assert(#api.nvim_tabpage_list_wins(0) == 2, 'reopening must not create duplicate history windows')
+press('<CR>')
+assert(vim.g.history_edited == 42 and vim.fn.histget('cmd', -1) == 'let g:history_edited = 42')
+assert(api.nvim_get_current_win() == source)
+press('::')
+press('ilet g:history_insert_enter = 7<CR>')
+assert(vim.g.history_insert_enter == 7, 'Enter must also execute from insert mode')
+assert(api.nvim_get_current_win() == source and api.nvim_get_mode().mode == 'n')
+assert(api.nvim_buf_get_lines(source_buffer, 0, -1, false)[1] == 'editor content',
+  'execution must not insert command text into the source buffer')
+press('::')
+press('<CR>')
+assert(api.nvim_get_current_win() == source, 'Enter on the blank line must just close history')
+press('::')
+window, buffer = api.nvim_get_current_win(), api.nvim_get_current_buf()
+api.nvim_win_close(source, true)
+press(' q')
+assert(not api.nvim_buf_is_valid(buffer), 'history must be closable even after its source window closes')
+assert(#api.nvim_tabpage_list_wins(0) == 1, 'closing the last history buffer must leave a usable editor')
+'''
+
 OPTIONS = PRELUDE + r'''
 require('config.options')
 assert(not vim.o.timeout, 'leader/multi-key mappings must wait indefinitely')
@@ -311,6 +382,14 @@ assert(mode.label() == '', 'returning to review must not re-enter the old naviga
 press(' cg')
 press('<Esc>')
 assert(review.is_active() and mode.label() == '', 'Escape must leave the mode, not close review')
+local review_window = api.nvim_get_current_win()
+local count = #api.nvim_tabpage_list_wins(0)
+press('::')
+assert(vim.b.command_history and not vim.wo.diff, 'history must not inherit review diff mode')
+press(' q')
+assert(review.is_active() and api.nvim_get_current_tabpage() == review_tab,
+  'Space q in history must not close the Git review tab')
+assert(api.nvim_get_current_win() == review_window and #api.nvim_tabpage_list_wins(0) == count)
 press(' q')
 assert(api.nvim_get_current_tabpage() == editor_tab)
 '''
@@ -320,6 +399,12 @@ assert(api.nvim_get_current_tabpage() == editor_tab)
 class Navigation(unittest.TestCase):
     def run_lua(self, lua):
         review_tests.GitReview.run_lua(self, lua)
+
+    def test_double_colon_opens_command_history(self):
+        self.run_lua(COMMAND_HISTORY)
+
+    def test_command_history_editing_and_lifecycle(self):
+        self.run_lua(COMMAND_HISTORY_EDITING)
 
     def test_mapping_timeout_is_disabled(self):
         self.run_lua(OPTIONS)
