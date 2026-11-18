@@ -59,6 +59,14 @@ use `:checkhealth vim.lsp` to check attachment and server health.
 `Space q` closes the current file buffer (across splits) or the Git review tab, protecting unsaved changes.
 Use `:qa` to quit all windows and tabs, or `:qa!` to discard all unsaved changes.
 
+## Formatting defaults
+
+Neovim requests four-space indentation from language servers. clangd uses
+clang-format's style instead of the editor's tab size: the stowed
+`~/.clang-format` supplies four spaces for files under your home directory.
+A closer project `.clang-format` wins. VS Code and Cursor also default to four
+spaces, including Prettier when the project supplies no configuration.
+
 ## Requirements
 
 Neovim 0.12+, Git, a C compiler, curl, tar, ripgrep, a Nerd Font and tree-sitter CLI 0.26.1+.
