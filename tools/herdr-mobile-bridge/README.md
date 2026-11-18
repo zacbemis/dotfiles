@@ -37,7 +37,7 @@ the source application's key bindings. For a longer reply, open Compose
 inside the agent's terminal and press Send.
 
 A phone viewer does not take input or resize control. Phone keystrokes request
-control briefly and can resize the source pane while typing. If a separate
+control briefly using the source pane's layout when available. If a separate
 direct terminal controller already owns the pane, the bridge drops the
 conflicting input. Send it again after that controller releases the pane.
 

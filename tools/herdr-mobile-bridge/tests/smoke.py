@@ -108,6 +108,10 @@ def smoke(root, session):
                  "Probe process failed to start")
 
     def attach_and_type(address, pane, alternate=False):
+        def source_rows():
+            return next(p["scroll"]["viewport_rows"] for p in panes() if p["pane_id"] == pane)
+
+        original_rows = source_rows()
         master, slave = pty.openpty()
         try:
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 72, 0, 0))
@@ -132,6 +136,7 @@ def smoke(root, session):
                     os.write(master, "from_phone_é\x1b[201~\r".encode())
                     wait_for(lambda: "observed_compose_from_phone_é" in run(HERDR, "pane", "read", pane).stdout,
                              "Split Compose paste and Enter were not delivered")
+                    assert source_rows() == original_rows, "Phone typing resized the source pane"
                 os.write(master, b"\x1b[<64;11;9M")
                 if alternate:
                     wait_for(

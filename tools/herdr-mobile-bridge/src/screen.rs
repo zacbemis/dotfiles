@@ -33,6 +33,38 @@ struct ReadText {
     text: String,
 }
 
+#[derive(Deserialize)]
+struct LayoutResult {
+    layout: Layout,
+}
+
+#[derive(Deserialize)]
+struct Layout {
+    panes: Vec<LayoutPane>,
+}
+
+#[derive(Deserialize)]
+struct LayoutPane {
+    pane_id: String,
+    rect: Grid,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct Grid {
+    pub(crate) width: u16,
+    pub(crate) height: u16,
+}
+
+pub(crate) fn source_grid(socket: &Path, pane: &str) -> Result<Option<Grid>> {
+    let response: LayoutResult = request_with(socket, "pane.layout", json!({"pane_id": pane}))?;
+    Ok(response
+        .layout
+        .panes
+        .into_iter()
+        .find(|item| item.pane_id == pane && item.rect.width > 0 && item.rect.height > 0)
+        .map(|item| item.rect))
+}
+
 pub(crate) fn snapshot(
     socket: &Path,
     pane: &str,
@@ -70,6 +102,7 @@ pub(crate) struct Screen {
     text: String,
     scrolled: bool,
     history: Vec<String>,
+    visible: Vec<String>,
 }
 
 impl Screen {
@@ -85,14 +118,18 @@ impl Screen {
         if self.size == Some(size) && self.text == text && self.scrolled == scrolled {
             return Ok(());
         }
-        let logical: Vec<String> = text
+        let mut logical: Vec<String> = text
             .lines()
             .map(|line| {
-                line.chars()
+                line.trim_end()
+                    .chars()
                     .filter(|character| !character.is_control())
                     .collect()
             })
             .collect();
+        while logical.last().is_some_and(String::is_empty) {
+            logical.pop();
+        }
         let mut lines = Vec::new();
         let starts: Vec<_> = logical
             .iter()
@@ -108,33 +145,55 @@ impl Screen {
         let split = lines.len().saturating_sub(usize::from(rows));
         let current = &lines[split..];
         let history = &logical[..starts.partition_point(|&start| start < split)];
-        // Write only the newly displaced rows into Core's real primary
-        // scrollback. Erases use ED2, which leaves scrollback intact.
-        if !scrolled {
+        let mut patch = Vec::new();
+        let mut repaint = self.size != Some(size);
+        if !scrolled && self.size.is_none_or(|old| old == size) {
             let old = overlap(&self.history, history);
-            if old < history.len() {
-                write!(output, "\x1b[0m\x1b[2J\x1b[{rows};1H")?;
+            // A fullscreen redraw can replace the whole prefix without
+            // scrolling. Do not add the whole prefix as new history.
+            if old < history.len() && (old > 0 || self.history.is_empty()) {
+                write!(patch, "\x1b[0m\x1b[2J\x1b[{rows};1H")?;
                 for line in &history[old..] {
-                    write!(output, "{line}\r\n")?;
+                    write!(patch, "{line}\r\n")?;
                 }
+                repaint = true;
             }
         }
         if !scrolled {
             self.history = history.to_vec();
         }
-        output.write_all(b"\x1b[0m\x1b[2J\x1b[H")?;
-        for (index, line) in current.iter().enumerate() {
-            if index != 0 {
-                output.write_all(b"\r\n")?;
-            }
-            output.write_all(line.as_bytes())?;
+        let previous = if repaint {
+            patch.extend_from_slice(b"\x1b[0m\x1b[2J");
+            &[][..]
+        } else {
+            &self.visible[..]
+        };
+        paint_rows(&mut patch, previous, current)?;
+        if !patch.is_empty() {
+            write!(patch, "\x1b[{};1H", current.len().max(1))?;
+            output.write_all(&patch)?;
+            output.flush()?;
         }
-        output.flush()?;
+        self.visible = current.to_vec();
         self.size = Some(size);
         self.scrolled = scrolled;
         self.text = text;
         Ok(())
     }
+}
+
+fn paint_rows(
+    output: &mut impl Write,
+    previous: &[String],
+    current: &[String],
+) -> std::io::Result<()> {
+    for index in 0..current.len().max(previous.len()) {
+        if current.get(index) != previous.get(index) {
+            let line = current.get(index).map_or("", String::as_str);
+            write!(output, "\x1b[{};1H\x1b[2K{line}", index + 1)?;
+        }
+    }
+    Ok(())
 }
 
 fn overlap(previous: &[String], current: &[String]) -> usize {
@@ -171,6 +230,22 @@ fn wrap(text: &str, cols: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn editing_the_prompt_repaints_only_its_row() {
+        let mut screen = Screen::default();
+        screen
+            .paint(&mut Vec::new(), "response\n> a".into(), false, 42, 30)
+            .unwrap();
+        let mut patch = Vec::new();
+        screen
+            .paint(&mut patch, "response\n> ab".into(), false, 42, 30)
+            .unwrap();
+        let patch = String::from_utf8(patch).unwrap();
+        assert!(patch.contains("> ab"));
+        assert!(!patch.contains("response"));
+        assert!(!patch.contains("\x1b[2J"));
+    }
 
     #[test]
     fn reflows_without_losing_the_right_edge_or_splitting_wide_characters() {

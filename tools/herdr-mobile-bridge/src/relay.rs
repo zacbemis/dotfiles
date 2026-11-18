@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::input::{Decoder, Input, MAX_INPUT};
-use crate::screen::{Screen, snapshot};
+use crate::screen::{Screen, snapshot, source_grid};
 use crate::{Agent, Result, agents, enabled, safe_app_name};
 
 const CHECK_INTERVAL: Duration = Duration::from_secs(1);
@@ -383,17 +383,30 @@ pub(crate) fn run(binary: &Path, socket: &Path, terminal: &str) -> Result<()> {
         }
 
         if !inputs.is_empty() {
-            if !enabled(socket)? || target.current()?.is_none() {
+            if !enabled(socket)? {
                 return Ok(());
             }
+            let Some(agent) = target.current()? else {
+                return Ok(());
+            };
             if controller.is_none() {
                 generation += 1;
+                // The relay reflows the output itself. Taking input control
+                // should not also reformat the original pane to phone width.
+                let source_size =
+                    source_grid(socket, &agent.pane_id)
+                        .ok()
+                        .flatten()
+                        .map_or(size, |grid| Size {
+                            cols: grid.width,
+                            rows: grid.height,
+                        });
                 controller = Some(Controller {
                     stream: Stream::launch(
                         binary,
                         socket,
                         terminal,
-                        size,
+                        source_size,
                         true,
                         generation,
                         send.clone(),
