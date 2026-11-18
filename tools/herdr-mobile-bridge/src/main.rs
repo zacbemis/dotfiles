@@ -144,9 +144,15 @@ fn safe_app_name(agent: &str) -> String {
     }
 }
 
-fn hc() -> Command {
+fn hc(herdr: &Path) -> Command {
     // The official phone app connects to the default local Core session.
-    let mut command = Command::new("hc");
+    // A server launched from a desktop may not inherit the shell's PATH.
+    let sibling = herdr.with_file_name("hc");
+    let mut command = Command::new(if sibling.is_file() {
+        sibling.as_os_str()
+    } else {
+        std::ffi::OsStr::new("hc")
+    });
     command
         .env("HC_SESSION", "default")
         .env_remove("HC_SOCKET")
@@ -155,13 +161,14 @@ fn hc() -> Command {
     command
 }
 
-fn core_terminals() -> Result<CoreList> {
-    let mut client = hc()
+fn core_terminals(herdr: &Path) -> Result<CoreList> {
+    let mut client = hc(herdr)
         .arg("connect")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .spawn()?;
+        .spawn()
+        .map_err(|error| format!("could not start hc beside Herdr or on PATH: {error}"))?;
     let mut input = client.stdin.take().expect("piped Core input");
     input.write_all(
         b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"terminal.list\",\"params\":{}}\n",
@@ -199,7 +206,7 @@ fn sync() -> Result<()> {
         return Ok(());
     }
 
-    let existing = core_terminals()?;
+    let existing = core_terminals(&binary)?;
     let executable = env::current_exe()?;
     let mut failed = 0;
     for agent in agents {
@@ -215,7 +222,7 @@ fn sync() -> Result<()> {
         }) {
             continue;
         }
-        let result = hc()
+        let result = hc(&binary)
             .args(["run", "--bg", "--no-parent", "--rm", "--name", &name])
             .args(["--label", &format!("{PLUGIN_ID}={scope}"), "--"])
             .arg(&executable)

@@ -21,6 +21,11 @@ HC = shutil.which("hc")
 
 def smoke(root, session):
     env = {key: os.environ[key] for key in ("HOME", "PATH", "USER", "LANG") if key in os.environ}
+    if session != "default" and Path(HC).parent == Path(HERDR).parent:
+        bin_dir = Path(HC).parent.resolve()
+        env["PATH"] = os.pathsep.join(
+            entry for entry in os.get_exec_path(env) if Path(entry).resolve() != bin_dir
+        )
     env.update({f"XDG_{key}_HOME": str(root / key.lower()) for key in ("CONFIG", "STATE", "DATA", "CACHE")})
     env.update(
         XDG_RUNTIME_DIR=str(root / "run"),

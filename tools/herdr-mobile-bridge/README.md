@@ -7,8 +7,9 @@ existing socket and your phone's existing SSH connection.
 
 ## Set up
 
-Install Herdr TUI 0.9.3 and put `hc` on the Herdr server's `PATH`. Core 0.1.21
-is the tested version. From this directory, build and link the plugin:
+Install Herdr TUI 0.9.3 and put `hc` beside the Herdr binary or on the server's
+`PATH`. Core 0.1.21 is the tested version. From this directory, build and link
+the plugin:
 
 ```sh
 cargo build --locked --release
