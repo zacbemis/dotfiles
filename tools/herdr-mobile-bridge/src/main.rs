@@ -1,4 +1,6 @@
+mod input;
 mod relay;
+mod screen;
 
 use std::collections::BTreeMap;
 use std::env;
@@ -24,6 +26,7 @@ struct AgentList {
 #[derive(Deserialize)]
 struct Agent {
     terminal_id: String,
+    pane_id: String,
     agent: String,
     agent_status: String,
     agent_session: Option<AgentSession>,
@@ -86,13 +89,21 @@ fn required_path(key: &str) -> Result<PathBuf> {
 }
 
 fn request<T: serde::de::DeserializeOwned>(socket: &Path, method: &str) -> Result<T> {
+    request_with(socket, method, json!({}))
+}
+
+fn request_with<T: serde::de::DeserializeOwned>(
+    socket: &Path,
+    method: &str,
+    params: Value,
+) -> Result<T> {
     let mut connection = UnixStream::connect(socket)?;
     let timeout = Some(Duration::from_secs(2));
     connection.set_read_timeout(timeout)?;
     connection.set_write_timeout(timeout)?;
     serde_json::to_writer(
         &mut connection,
-        &json!({"id": "mobile-bridge", "method": method, "params": {}}),
+        &json!({"id": "mobile-bridge", "method": method, "params": params}),
     )?;
     connection.write_all(b"\n")?;
     // A reply larger than this is unusable to the bridge. Never echo a reply
@@ -161,7 +172,11 @@ fn hc(herdr: &Path) -> Command {
     command
 }
 
-fn core_terminals(herdr: &Path) -> Result<CoreList> {
+fn core_request<T: serde::de::DeserializeOwned>(
+    herdr: &Path,
+    method: &str,
+    params: Value,
+) -> Result<T> {
     let mut client = hc(herdr)
         .arg("connect")
         .stdin(Stdio::piped())
@@ -170,22 +185,24 @@ fn core_terminals(herdr: &Path) -> Result<CoreList> {
         .spawn()
         .map_err(|error| format!("could not start hc beside Herdr or on PATH: {error}"))?;
     let mut input = client.stdin.take().expect("piped Core input");
-    input.write_all(
-        b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"terminal.list\",\"params\":{}}\n",
+    serde_json::to_writer(
+        &mut input,
+        &json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}),
     )?;
+    input.write_all(b"\n")?;
     drop(input);
     let output = client.wait_with_output()?;
     if !output.status.success() {
         return Err("could not connect to the default Core session".into());
     }
-    let response: CoreResponse = serde_json::from_slice(&output.stdout)
-        .map_err(|_| "unexpected terminal.list response from Core")?;
+    let response: CoreResponse<T> = serde_json::from_slice(&output.stdout)
+        .map_err(|_| format!("{method} failed or returned an invalid response from Core"))?;
     Ok(response.result)
 }
 
 #[derive(Deserialize)]
-struct CoreResponse {
-    result: CoreList,
+struct CoreResponse<T> {
+    result: T,
 }
 
 fn sync() -> Result<()> {
@@ -206,7 +223,7 @@ fn sync() -> Result<()> {
         return Ok(());
     }
 
-    let existing = core_terminals(&binary)?;
+    let existing: CoreList = core_request(&binary, "terminal.list", json!({}))?;
     let executable = env::current_exe()?;
     let mut failed = 0;
     for agent in agents {
@@ -222,16 +239,15 @@ fn sync() -> Result<()> {
         }) {
             continue;
         }
-        let result = hc(&binary)
-            .args(["run", "--bg", "--no-parent", "--rm", "--name", &name])
-            .args(["--label", &format!("{PLUGIN_ID}={scope}"), "--"])
-            .arg(&executable)
-            .arg("relay")
-            .arg(&binary)
-            .arg(&socket)
-            .arg(agent.terminal_id)
-            .output()?;
-        if !result.status.success() {
+        let params = json!({
+            "argv": [executable, PathBuf::from("relay"), binary, socket, PathBuf::from(agent.terminal_id)],
+            "name": name,
+            "labels": {PLUGIN_ID: scope},
+            "size": {"cols": 42, "rows": 30},
+            "no_parent": true,
+            "rm": true,
+        });
+        if core_request::<Value>(&binary, "terminal.run", params).is_err() {
             failed += 1;
         }
     }

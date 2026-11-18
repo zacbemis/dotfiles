@@ -26,8 +26,15 @@ connect to the machine's default Core session as the same Unix user.
 Open the official phone app and select the SSH host. The Inbox uses the
 agent's reported status. A terminal name such as `codex-tui-…` identifies a
 bridged pane. Core carries the live terminal and status, while the original
-TUI owns the agent and its workspace. The plugin does not publish TUI splits,
-workspace layouts, file transfer, or the pane's prior scrollback.
+TUI owns the agent and its workspace. The bridge reflows the source text for
+the phone and seeds Core scrollback from up to 1,000 rows available in Herdr.
+The phone view displays text without the original terminal colors.
+
+Swipe to scroll. The bridge forwards wheel gestures inside the terminal to
+the source, including fullscreen agents that manage their own history.
+Page Up and Page Down can also be sent from the terminal key bar, subject to
+the source application's key bindings. For a longer reply, open Compose
+inside the agent's terminal and press Send.
 
 A phone viewer does not take input or resize control. Phone keystrokes request
 control briefly and can resize the source pane while typing. If a separate
@@ -58,9 +65,9 @@ timeout 90s python3 -u tests/smoke.py
 
 The smoke test runs separate Herdr and Core servers under scratch XDG paths
 and substitutes local probe processes for agents. It exercises startup and
-discovery hooks, the Core list API, OSC 7501 status, interactive attach,
-controller contention, pane reuse, and cleanup in default and named TUI
-sessions.
+discovery hooks, the Core list API, OSC 7501 status, preexisting scrollback,
+phone-width reflow, split Compose input, alternate-screen wheel input,
+controller contention, pane reuse, and cleanup in default and named TUI sessions.
 
 Protocol references [Herdr TUI socket API](https://herdr.dev/tui/docs/socket-api/),
 [terminal streams](https://herdr.dev/tui/docs/persistence-remote/),

@@ -11,25 +11,27 @@ use base64::engine::general_purpose::STANDARD;
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::input::{Decoder, Input, MAX_INPUT};
+use crate::screen::{Screen, snapshot};
 use crate::{Agent, Result, agents, enabled, safe_app_name};
 
 const CHECK_INTERVAL: Duration = Duration::from_secs(1);
 const CONTROL_IDLE: Duration = Duration::from_secs(2);
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(2);
-const MAX_PENDING_INPUT: usize = 8192;
+const PAINT_INTERVAL: Duration = Duration::from_millis(160);
 const MAX_FRAME_LINE: u64 = 24 * 1024 * 1024;
 
 #[derive(Deserialize)]
 #[serde(tag = "type")]
 enum Frame {
     #[serde(rename = "terminal.frame")]
-    Data { bytes: String },
+    Data {},
     #[serde(rename = "terminal.closed")]
     Closed,
 }
 
 enum Event {
-    Frame(u64, Vec<u8>),
+    Frame(u64),
     StreamClosed(u64),
     Input(Vec<u8>),
     InputClosed,
@@ -136,23 +138,14 @@ impl Stream {
                     break;
                 }
                 match serde_json::from_slice(&line) {
-                    Ok(Frame::Data { bytes }) => {
-                        // The controller's first frame confirms ownership.
-                        // Use the observer's stream for display throughout.
-                        if !control || !announced {
-                            let data = if control {
-                                Vec::new()
-                            } else {
-                                let Ok(data) = STANDARD.decode(bytes) else {
-                                    break;
-                                };
-                                data
-                            };
-                            if events.send(Event::Frame(id, data)).is_err() {
-                                return;
-                            }
-                            announced = true;
+                    Ok(Frame::Data {}) => {
+                        // The first controller frame confirms input ownership.
+                        // Observer frames are redraw notifications. The screen
+                        // projection reads uncropped text from the source.
+                        if (!control || !announced) && events.send(Event::Frame(id)).is_err() {
+                            return;
                         }
+                        announced = true;
                     }
                     Ok(Frame::Closed) | Err(_) => break,
                 }
@@ -174,24 +167,47 @@ struct Controller {
     stream: Stream,
     ready: bool,
     touched: Instant,
-    pending: Vec<u8>,
+    pending: Vec<Input>,
+    pending_size: usize,
+    last_paste: Option<Instant>,
 }
 
 impl Controller {
-    fn send(&mut self, bytes: &[u8]) -> io::Result<()> {
+    fn send(&mut self, input: Input, rows: u16) -> io::Result<()> {
         if self.ready {
             let stdin: &mut ChildStdin = self.stream.child.stdin.as_mut().expect("piped input");
-            serde_json::to_writer(
-                &mut *stdin,
-                &json!({
-                    "type": "terminal.input", "bytes": STANDARD.encode(bytes),
+            let message = match input {
+                Input::Bytes(bytes) => {
+                    if let Some(paste_at) = self.last_paste.take() {
+                        thread::sleep(Duration::from_millis(40).saturating_sub(paste_at.elapsed()));
+                    }
+                    json!({"type": "terminal.input", "bytes": STANDARD.encode(bytes)})
+                }
+                Input::Paste(bytes) => {
+                    self.last_paste = Some(Instant::now());
+                    json!({"type": "terminal.input", "bytes": STANDARD.encode(bytes)})
+                }
+                Input::Scroll { up, cell } => json!({
+                    "type": "terminal.scroll",
+                    "direction": if up { "up" } else { "down" },
+                    "source": if cell.is_some() { "wheel" } else { "page_key" },
+                    "lines": if cell.is_some() { 3 } else { rows.saturating_sub(1).max(1) },
+                    "column": cell.map(|(col, _)| col),
+                    "row": cell.map(|(_, row)| row),
                 }),
-            )?;
+            };
+            serde_json::to_writer(&mut *stdin, &message)?;
             stdin.write_all(b"\n")?;
-        } else if self.pending.len() + bytes.len() <= MAX_PENDING_INPUT {
-            self.pending.extend_from_slice(bytes);
         } else {
-            return Err(io::Error::other("input arrived before control was granted"));
+            let size = match &input {
+                Input::Bytes(bytes) | Input::Paste(bytes) => bytes.len(),
+                Input::Scroll { .. } => 1,
+            };
+            if self.pending_size + size > MAX_INPUT {
+                return Err(io::Error::other("input arrived before control was granted"));
+            }
+            self.pending_size += size;
+            self.pending.push(input);
         }
         self.touched = Instant::now();
         Ok(())
@@ -206,21 +222,21 @@ struct Target<'a> {
 }
 
 impl Target<'_> {
-    fn status(&mut self) -> Result<Option<String>> {
+    fn current(&mut self) -> Result<Option<Agent>> {
         let Some(agent) = find_agent(self.socket, self.terminal)? else {
             return Ok(None);
         };
-        let session = agent.agent_session.map(|identity| identity.value);
+        let session = agent.agent_session.as_ref().map(|identity| &identity.value);
         if agent.agent != self.agent
             || self
                 .session
                 .as_ref()
-                .is_some_and(|old| session.as_ref() != Some(old))
+                .is_some_and(|old| session != Some(old))
         {
             return Ok(None);
         }
-        self.session = session;
-        Ok(Some(agent.agent_status))
+        self.session = session.cloned();
+        Ok(Some(agent))
     }
 }
 
@@ -253,6 +269,10 @@ pub(crate) fn run(binary: &Path, socket: &Path, terminal: &str) -> Result<()> {
     let app = safe_app_name(&target.agent);
     let _raw = RawTerminal::enter()?;
     let mut output = io::stdout().lock();
+    // Compose uses bracketed paste. Mouse reporting lets terminal clients
+    // route wheel gestures to fullscreen agents with application history.
+    output.write_all(b"\x1b[?2004h\x1b[?1000h\x1b[?1006h")?;
+    output.flush()?;
     let (send, events) = mpsc::sync_channel(16);
     let input_events = send.clone();
     thread::spawn(move || {
@@ -271,7 +291,7 @@ pub(crate) fn run(binary: &Path, socket: &Path, terminal: &str) -> Result<()> {
 
     let mut generation = 1;
     let mut size = Size::current();
-    let mut observer = Stream::launch(
+    let observer = Stream::launch(
         binary,
         socket,
         terminal,
@@ -283,16 +303,23 @@ pub(crate) fn run(binary: &Path, socket: &Path, terminal: &str) -> Result<()> {
     let mut controller: Option<Controller> = None;
     let mut next_check = Instant::now();
     let mut status_sent = None;
+    let mut screen = Screen::default();
+    let mut dirty = true;
+    let mut next_paint = Instant::now();
+    let mut pane = agent.pane_id;
+    let mut decoder = Decoder::default();
     loop {
         let now = Instant::now();
         if now >= next_check {
             if !enabled(socket)? {
                 return Ok(());
             }
-            let Some(status) = target.status()? else {
+            let Some(agent) = target.current()? else {
                 return Ok(());
             };
-            let status = core_status(&status);
+            pane = agent.pane_id;
+            dirty = true;
+            let status = core_status(&agent.agent_status);
             if status_sent != Some(status) {
                 write!(output, "\x1b]7501;state={status}:app={app}\x1b\\")?;
                 output.flush()?;
@@ -314,37 +341,34 @@ pub(crate) fn run(binary: &Path, socket: &Path, terminal: &str) -> Result<()> {
 
         let new_size = Size::current();
         if new_size != size {
-            // Reopen only the read-only viewport. A phone merely viewing a
-            // terminal must not take write or resize ownership.
             size = new_size;
-            generation += 1;
-            observer = Stream::launch(
-                binary,
-                socket,
-                terminal,
-                size,
-                false,
-                generation,
-                send.clone(),
-            )?;
+            dirty = true;
+        }
+        if dirty && now >= next_paint {
+            if let Ok(Some((text, scrolled))) = snapshot(socket, &pane, terminal) {
+                screen.paint(&mut output, text, scrolled, size.cols, size.rows)?;
+            }
+            dirty = false;
+            next_paint = Instant::now() + PAINT_INTERVAL;
         }
 
+        let mut inputs = decoder.flush_escape().into_iter().collect::<Vec<_>>();
         match events.recv_timeout(Duration::from_millis(100)) {
-            Ok(Event::Frame(id, bytes)) if id == observer.id => {
-                output.write_all(&bytes)?;
-                output.flush()?;
-            }
+            Ok(Event::Frame(id)) if id == observer.id => dirty = true,
             Ok(Event::StreamClosed(id)) if id == observer.id => return Ok(()),
-            Ok(Event::Frame(id, _))
+            Ok(Event::Frame(id))
                 if controller.as_ref().is_some_and(|held| held.stream.id == id) =>
             {
-                if !enabled(socket)? || target.status()?.is_none() {
+                if !enabled(socket)? || target.current()?.is_none() {
                     return Ok(());
                 }
                 let held = controller.as_mut().expect("matching controller");
                 held.ready = true;
                 let pending = std::mem::take(&mut held.pending);
-                if held.send(&pending).is_err() {
+                if pending
+                    .into_iter()
+                    .any(|input| held.send(input, size.rows).is_err())
+                {
                     controller = None;
                 }
             }
@@ -353,38 +377,42 @@ pub(crate) fn run(binary: &Path, socket: &Path, terminal: &str) -> Result<()> {
             {
                 controller = None;
             }
-            Ok(Event::Input(bytes)) => {
-                if !enabled(socket)? || target.status()?.is_none() {
-                    return Ok(());
-                }
-                if controller.is_none() {
-                    generation += 1;
-                    controller = Some(Controller {
-                        stream: Stream::launch(
-                            binary,
-                            socket,
-                            terminal,
-                            size,
-                            true,
-                            generation,
-                            send.clone(),
-                        )?,
-                        ready: false,
-                        touched: Instant::now(),
-                        pending: Vec::new(),
-                    });
-                }
-                if controller
-                    .as_mut()
-                    .expect("active controller")
-                    .send(&bytes)
-                    .is_err()
-                {
-                    controller = None;
-                }
-            }
+            Ok(Event::Input(bytes)) => inputs.extend(decoder.push(&bytes)),
             Ok(Event::InputClosed) | Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(()),
             _ => {}
+        }
+
+        if !inputs.is_empty() {
+            if !enabled(socket)? || target.current()?.is_none() {
+                return Ok(());
+            }
+            if controller.is_none() {
+                generation += 1;
+                controller = Some(Controller {
+                    stream: Stream::launch(
+                        binary,
+                        socket,
+                        terminal,
+                        size,
+                        true,
+                        generation,
+                        send.clone(),
+                    )?,
+                    ready: false,
+                    touched: Instant::now(),
+                    pending: Vec::new(),
+                    pending_size: 0,
+                    last_paste: None,
+                });
+            }
+            let held = controller.as_mut().expect("active controller");
+            if inputs
+                .into_iter()
+                .any(|input| held.send(input, size.rows).is_err())
+            {
+                controller = None;
+            }
+            dirty = true;
         }
     }
 }

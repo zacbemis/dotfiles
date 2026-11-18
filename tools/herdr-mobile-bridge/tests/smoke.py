@@ -41,14 +41,29 @@ def smoke(root, session):
     (root / "herdr.toml").write_text("onboarding = false\n")
     probe = root / "probe.py"
     probe.write_text(
-        "import sys, termios\n"
+        "import os, sys, termios, tty\n"
+        "if sys.argv[1] == 'alternate':\n"
+        "    tty.setraw(0)\n"
+        "    os.write(1, b'\\x1b[?1049h\\x1b[?1000h\\x1b[?1006hprobe_ready_alternate')\n"
+        "    data = b''\n"
+        "    while chunk := os.read(0, 4096):\n"
+        "        data = (data + chunk)[-64:]\n"
+        "        if b'\\x1b[<64;11;9M' in data:\n"
+        "            os.write(1, b'\\x1b[2J\\x1b[Hprior_alternate_response')\n"
+        "    sys.exit()\n"
         "attrs = termios.tcgetattr(0)\n"
         "attrs[3] &= ~termios.ECHO\n"
         "termios.tcsetattr(0, termios.TCSANOW, attrs)\n"
+        "if sys.argv[1] == 'original':\n"
+        "    for i in range(96):\n"
+        "        print(f'prior_response_{i:03}')\n"
         "print('probe_ready_' + sys.argv[1], flush=True)\n"
         "for line in sys.stdin:\n"
         "    if line.strip() == 'retire':\n"
         "        break\n"
+        "    if line.strip() == 'wide':\n"
+        "        print('abcdefghij' * 14 + 'RIGHT_EDGE_KEPT', flush=True)\n"
+        "        continue\n"
         "    print('observed_' + line.strip(), flush=True)\n"
     )
 
@@ -92,7 +107,7 @@ def smoke(root, session):
         wait_for(lambda: f"probe_ready_{label}" in run(HERDR, "pane", "read", pane).stdout,
                  "Probe process failed to start")
 
-    def attach_and_type(address, pane):
+    def attach_and_type(address, pane, alternate=False):
         master, slave = pty.openpty()
         try:
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 72, 0, 0))
@@ -103,13 +118,31 @@ def smoke(root, session):
             try:
                 rendered = bytearray()
                 deadline = time.monotonic() + 5
-                while b"observed_from_tui" not in rendered and time.monotonic() < deadline:
+                marker = b"probe_ready_alternate" if alternate else b"observed_from_tui"
+                while marker not in rendered and time.monotonic() < deadline:
                     if select.select([master], [], [], 0.1)[0]:
                         rendered.extend(os.read(master, 65536))
-                assert b"observed_from_tui" in rendered, "Core attach did not display the live screen"
-                os.write(master, "from_attach_é\r".encode())
-                wait_for(lambda: "observed_from_attach_é" in run(HERDR, "pane", "read", pane).stdout,
-                         "Attached Core client did not deliver UTF-8 input")
+                assert marker in rendered, "Core attach did not display the live screen"
+                if not alternate:
+                    os.write(master, "from_attach_é\r".encode())
+                    wait_for(lambda: "observed_from_attach_é" in run(HERDR, "pane", "read", pane).stdout,
+                             "Attached Core client did not deliver UTF-8 input")
+                    os.write(master, b"\x1b[200~compose_")
+                    time.sleep(0.08)
+                    os.write(master, "from_phone_é\x1b[201~\r".encode())
+                    wait_for(lambda: "observed_compose_from_phone_é" in run(HERDR, "pane", "read", pane).stdout,
+                             "Split Compose paste and Enter were not delivered")
+                os.write(master, b"\x1b[<64;11;9M")
+                if alternate:
+                    wait_for(
+                        lambda: "prior_alternate_response" in run(HC, "read", address).stdout,
+                        "Wheel input did not reveal app-managed alternate history",
+                    )
+                else:
+                    wait_for(
+                        lambda: next(p["scroll"]["offset_from_bottom"] for p in panes() if p["pane_id"] == pane) > 0,
+                        "A phone wheel packet did not scroll the source pane",
+                    )
                 os.write(master, b"\x1c")  # Ctrl+\\ detaches the Core client.
                 assert attached.wait(timeout=5) == 0
             finally:
@@ -159,6 +192,14 @@ def smoke(root, session):
         run(HERDR, "plugin", "action", "invoke", "sync", "--plugin", "herdr-mobile-bridge")
         existing = wait_for(lambda: status("existing", "working"), "Existing agent failed to sync")
         print("Existing agent appeared in the Core API.")
+        assert (existing["cols"], existing["rows"]) == (42, 30)
+        wait_for(lambda: "prior_response_000" in run(HC, "read", "--lines", "500", existing["address"]).stdout,
+                 "Preexisting source scrollback was not imported into Core")
+        run(HERDR, "pane", "send-text", pane, "wide")
+        run(HERDR, "pane", "send-keys", pane, "Enter")
+        wait_for(lambda: "RIGHT_EDGE_KEPT" in run(HC, "read", existing["address"]).stdout,
+                 "Phone-sized relay clipped the right edge of the response")
+        print("Core imported preexisting history and showed the end of a wide response at phone width.")
 
         run(HERDR, "pane", "split", pane, "--direction", "right", "--no-focus")
         other = next(p["pane_id"] for p in panes() if p["pane_id"] != pane)
@@ -178,7 +219,7 @@ def smoke(root, session):
         wait_for(lambda: "observed_from_core" in run(HERDR, "pane", "read", pane).stdout,
                  "Core input did not reach TUI")
         attach_and_type(existing["address"], pane)
-        print("A Core client attached to the live screen and sent UTF-8 input to the original pane.")
+        print("A Core client scrolled the source and delivered UTF-8 keys and split Compose paste.")
 
         # Hold a separate controller on the second pane and check that the
         # relayed input cannot displace it. The bridge does not replay keys
@@ -213,6 +254,15 @@ def smoke(root, session):
 
         run(HERDR, "pane", "close", other)
         wait_for(lambda: len(mirrors()) == 1, "Closed pane still advertised")
+        run(HERDR, "pane", "split", pane, "--direction", "right", "--no-focus")
+        alternate = next(p["pane_id"] for p in panes() if p["pane_id"] != pane)
+        start_probe(alternate, "alternate")
+        report(alternate, "working", "alternate")
+        alt_core = wait_for(lambda: status("alternate", "working"), "Alternate agent not published")
+        attach_and_type(alt_core["address"], alternate, alternate=True)
+        print("Wheel input exposed app-managed alternate-screen history at the correct coordinates.")
+        run(HERDR, "pane", "close", alternate)
+        wait_for(lambda: len(mirrors()) == 1, "Closed alternate pane still advertised")
         run(HERDR, "pane", "send-text", pane, "retire")
         run(HERDR, "pane", "send-keys", pane, "Enter")
         wait_for(lambda: not mirrors(), "Retired agent still advertised")
