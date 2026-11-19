@@ -197,6 +197,25 @@ class PreferenceBoundaries(unittest.TestCase):
         tools.link(self.root, self.home, self.backups)
         self.assertEqual(json.loads((self.backups / ".claude/settings.json").read_text()), {"model": "previous"})
 
+    def test_link_can_select_only_requested_managed_paths(self):
+        self.put(self.root, "tool-settings/manifest.json", {"files": [".zshrc", ".claude/settings.json"]})
+        source = self.put(self.root, ".zshrc", "tracked shell")
+        self.put(self.root, ".claude/settings.json", {"model": "fixture"})
+        untouched = self.put(self.home, ".claude/settings.json", {"model": "local"})
+        tools.link(self.root, self.home, self.backups, only=[".zshrc"])
+        self.assertEqual((self.home / ".zshrc").resolve(), source)
+        self.assertFalse(untouched.is_symlink())
+        self.assertEqual(json.loads(untouched.read_text()), {"model": "local"})
+        self.assertFalse((self.backups / ".claude/settings.json").exists())
+
+    def test_link_rejects_unmanaged_selection_before_making_changes(self):
+        self.put(self.root, "tool-settings/manifest.json", {"files": [".zshrc"]})
+        self.put(self.root, ".zshrc", "tracked shell")
+        with self.assertRaisesRegex(ValueError, "Unmanaged paths requested"):
+            tools.link(self.root, self.home, self.backups, only=[".zshrc", ".ssh/config"])
+        self.assertFalse((self.home / ".zshrc").exists())
+        self.assertFalse(self.backups.exists())
+
     def test_existing_absolute_link_is_normalized_for_stow(self):
         self.put(self.root, "tool-settings/manifest.json", {"files": [".claude/settings.json"]})
         source = self.put(self.root, ".claude/settings.json", {"model": "fixture"})

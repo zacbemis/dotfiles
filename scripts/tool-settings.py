@@ -153,8 +153,15 @@ def link_status(source, path):
     return "matches" if path.read_bytes() == source.read_bytes() else "differs"
 
 
-def link(root, home, directory):
-    for relative in managed_files(root):
+def link(root, home, directory, only=None):
+    files = list(managed_files(root))
+    if only is not None:
+        selected = {Path(name) for name in only}
+        unknown = selected - set(files)
+        if unknown:
+            raise ValueError("Unmanaged paths requested: " + ", ".join(sorted(map(str, unknown))))
+        files = [relative for relative in files if relative in selected]
+    for relative in files:
         source, path = root / relative, home / relative
         # A Stow-folded parent can expose the actual source file, not a leaf
         # symlink. Never replace that file with a link to itself.
@@ -174,7 +181,10 @@ def link(root, home, directory):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("status", "capture-preferences", "link", "apply-preferences"))
+    parser.add_argument("--only", nargs="+", metavar="PATH", help="Link only these managed paths")
     args = parser.parse_args()
+    if args.only is not None and args.action != "link":
+        parser.error("--only is supported only for link")
     home = Path.home()
     if args.action == "capture-preferences":
         capture(ROOT, home)
@@ -190,7 +200,10 @@ def main():
     else:
         directory = Path(os.environ.get("XDG_STATE_HOME", str(home / ".local/state"))) / "dotfiles-tool-settings" / (datetime.now().strftime("%Y%m%d-%H%M%S") + f"-{os.getpid()}")
         directory.mkdir(parents=True, mode=0o700)
-        (link if args.action == "link" else apply)(ROOT, home, directory)
+        if args.action == "link":
+            link(ROOT, home, directory, only=args.only)
+        else:
+            apply(ROOT, home, directory)
         print(f"Existing files backed up under {directory}")
 
 

@@ -25,6 +25,18 @@ python3 scripts/tool-settings.py link
 Backups go under `${XDG_STATE_HOME:-~/.local/state}/dotfiles-tool-settings/`.
 Install applications and sign in separately.
 
+For selective deployment on a development server, pass managed paths explicitly:
+
+```bash
+python3 scripts/tool-settings.py link --only .zshenv .zshrc .p10k.zsh .bashrc .bash_profile .config/herdr/config.toml
+```
+
+Repeat with the other terminal/agent files needed on that host. This leaves desktop
+settings and server-specific agent instructions untouched. Neovim is separate from
+the manifest; an existing `~/.config/nvim` link to this repo stays current automatically.
+Zsh respects `NVM_DIR`, otherwise checks the XDG/Arch location then `~/.nvm`, and
+preserves SSH-forwarded agents. Bash login retains the host's `~/.profile` SDK setup.
+
 Filtered preferences are captured/restored explicitly, never by the desktop installer:
 
 ```bash
