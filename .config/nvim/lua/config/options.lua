@@ -24,7 +24,6 @@ opt.wrap = true
 opt.linebreak = true -- Wrap at word boundaries without changing the file.
 opt.breakindent = true
 opt.diffopt:append("followwrap") -- Keep wrapping enabled in side-by-side diffs.
-vim.cmd.colorscheme("habamax") -- Temporary fallback until the syntax theme loads.
 
 -- Indentation (filetype-specific settings may override these)
 opt.expandtab = true

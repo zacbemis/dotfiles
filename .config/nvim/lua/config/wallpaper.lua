@@ -163,13 +163,13 @@ end
 function M.setup(opts)
   opts = opts or {}
   M.stop()
-  vim.cmd.colorscheme("dotfiles") -- Fixed syntax even when no wallpaper palette exists.
   M.paths = opts.paths
     or {
       vim.fn.stdpath("config") .. "/lua/colors/wal-colors.lua",
       vim.fn.stdpath("config") .. "/lua/colors/matugen-colors.lua",
     }
-  M.reload(true)
+  -- A palette loads the dotfiles theme itself; otherwise keep fixed syntax colors.
+  if not M.reload(true) then vim.cmd.colorscheme("dotfiles") end
 
   local group = vim.api.nvim_create_augroup("WallpaperColors", { clear = true })
   vim.api.nvim_create_autocmd("FocusGained", {
