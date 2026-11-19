@@ -90,6 +90,7 @@ class InstallerFlow(unittest.TestCase):
         shutil.copy2(ROOT / ".stow-local-ignore", self.repo / ".stow-local-ignore")
         (self.repo / "scripts").mkdir()
         shutil.copy2(ROOT / "scripts/tool-settings.py", self.repo / "scripts/tool-settings.py")
+        shutil.copy2(ROOT / "scripts/setup-ssh-keyring.sh", self.repo / "scripts/setup-ssh-keyring.sh")
         files = {".bashrc": "# repository bashrc\n", ".bash_profile": "# repository login\n",
                  ".zshrc": "# repository zshrc\n", ".claude/settings.json": '{"model":"fixture"}\n'}
         for name, data in files.items():
@@ -164,8 +165,13 @@ class InstallerFlow(unittest.TestCase):
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_text(), "# Arch skeleton bashrc\n")
         installed = {package for call in self.calls("yay") for package in call["args"]}
-        self.assertTrue({"base-devel", "curl", "git", "github-cli", "playerctl", "quickshell", "helium-browser-bin", "xdg-desktop-portal-gtk"}.issubset(installed))
+        self.assertTrue({"base-devel", "curl", "git", "github-cli", "playerctl", "quickshell", "helium-browser-bin", "xdg-desktop-portal-gtk",
+                         "openssh", "gcr-4", "gnome-keyring", "seahorse"}.issubset(installed))
         self.assertNotIn("waybar", installed)
+        self.assertIn(["--user", "disable", "ssh-agent.socket", "ssh-agent.service"],
+                      [row["args"] for row in self.calls("systemctl")])
+        self.assertIn(["--user", "enable", "--now", "gnome-keyring-daemon.socket", "gcr-ssh-agent.socket"],
+                      [row["args"] for row in self.calls("systemctl")])
         self.assertEqual(len(self.calls("gsettings")), 3, "Schema probe must drain its producer and apply both fonts")
         self.assertEqual([row["args"] for row in self.calls("sudo")],
                          [["systemctl", "enable", "--now", "NetworkManager"], ["systemctl", "enable", "--now", "bluetooth"]])

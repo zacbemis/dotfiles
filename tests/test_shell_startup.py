@@ -54,9 +54,10 @@ class ZshEnvironment(unittest.TestCase):
         self.env["SSH_AUTH_SOCK"] = "/forwarded/agent.sock"
         self.assertEqual(self.run_zsh('print -r -- "$SSH_AUTH_SOCK"'), "/forwarded/agent.sock")
 
-    def test_desktop_agent_is_used_only_when_socket_exists(self):
+    def test_gcr_agent_is_used_only_when_socket_exists(self):
         self.env["XDG_RUNTIME_DIR"] = str(self.home)
-        path = self.home / "ssh-agent.socket"
+        path = self.home / "gcr/ssh"
+        path.parent.mkdir()
         self.assertEqual(self.run_zsh('print -r -- "${SSH_AUTH_SOCK-unset}"'), "unset")
         with socket.socket(socket.AF_UNIX) as agent:
             agent.bind(str(path))

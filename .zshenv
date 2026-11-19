@@ -10,8 +10,8 @@ if [[ -s "$NVM_DIR/nvm.sh" ]]; then
 fi
 
 # Preserve forwarded agents; the desktop socket does not exist on every host.
-if [[ -z ${SSH_AUTH_SOCK:-} && -n ${XDG_RUNTIME_DIR:-} && -S "$XDG_RUNTIME_DIR/ssh-agent.socket" ]]; then
-  export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/ssh-agent.socket"
+if [[ -z ${SSH_AUTH_SOCK:-} && -n ${XDG_RUNTIME_DIR:-} && -S "$XDG_RUNTIME_DIR/gcr/ssh" ]]; then
+  export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/gcr/ssh"
 fi
 
 typeset -U path

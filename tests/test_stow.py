@@ -66,7 +66,7 @@ class StowDeployment(unittest.TestCase):
             command = ["stow", "--no-folding", "--dir", str(package), "--target", str(home)]
             env = dict(os.environ, HOME=str(home))
             subprocess.run([*command, "."], env=env, check=True, capture_output=True, text=True)
-            for name in (".gitconfig", ".config/hypr/hyprland.lua", ".config/hypr/scripts/display-power.sh",
+            for name in (".gitconfig", ".clang-format", ".config/hypr/hyprland.lua", ".config/hypr/scripts/display-power.sh",
                          ".config/quickshell/shell.qml", ".config/nvim/init.lua", ".pi/agent/settings.json",
                          ".claude/settings.json", "skills/system/run-workflow/SKILL.md"):
                 with self.subTest(path=name):

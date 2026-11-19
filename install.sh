@@ -78,6 +78,10 @@ OFFICIAL=(
     curl
     git
     github-cli
+    openssh
+    gcr-4
+    gnome-keyring
+    seahorse
     kitty
     zsh
     fzf
@@ -252,6 +256,9 @@ for service in NetworkManager bluetooth; do
     info "Enabling and starting $service..."
     sudo systemctl enable --now "$service"
 done
+
+# ── desktop SSH authentication ───────────────────────────────────────
+"$DOTFILES_DIR/scripts/setup-ssh-keyring.sh"
 
 # ── done ─────────────────────────────────────────────────────────────
 echo ""

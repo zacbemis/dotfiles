@@ -13,9 +13,9 @@ panel_bg = "reset"
 sidebar_bg = "reset"
 surface0 = "reset"
 surface_dim = "reset"
-active_row_bg = "#5f4a09"
-selection_bg = "#5f4a09"
-accent = "#5f4a09"
+active_row_bg = "#474e61"
+selection_bg = "#474e61"
+accent = "#474e61"
 # END managed wallpaper surfaces
 # Herdr also uses accent for other UI highlights.
 
