@@ -28,6 +28,18 @@ function M.new(model, actions)
     return model:context(self:current())
   end
 
+  function sidebar:matching_rows(matches)
+    local result = {}
+    for index, row in ipairs(rows or {}) do
+      local selection = row.kind == "file" and model:selection(row.id)
+      if selection and (selection.kind == "unstaged" or selection.kind == "staged")
+        and matches(vim.fs.joinpath(selection.root, selection.path), row.status) then
+        result[#result + 1] = index
+      end
+    end
+    return result
+  end
+
   function sidebar:render(selected)
     selected = selected or self:current() or remembered
     rows = model:rows()
@@ -121,7 +133,7 @@ function M.new(model, actions)
   map("<leader>q", actions.close, "Close Git review")
   map("<leader>e", actions.toggle_sidebar, "Toggle review browser")
   map("g?", function()
-    vim.notify("Git branches and worktrees\nl expand/open  L make root  h collapse/parent  H parent root / branch list\ns stage/unstage  gS switch branch / open worktree window  R refresh  Space e toggle sidebar\nH/L collapse/open context in diff panes  Space q close review  :q close window")
+    vim.notify("Git branches and worktrees\nl expand/open  L make root  h collapse/parent  H parent root / branch list\ns stage/unstage  gS switch branch / open worktree window  R refresh  Space e toggle sidebar\nSpace cg/cd/ce find changed files, diagnostics or errors\nH/L collapse/open context in diff panes  Space q close review  :q close window")
   end, "Show review controls")
   return sidebar
 end

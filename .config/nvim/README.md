@@ -35,9 +35,9 @@ Space-prefixed and other multi-key mappings wait indefinitely; press `Esc` to ca
 | `Space ff` / `Space fg` | Find files / search text |
 | `Space gd` | Open Git review |
 | `gd` / `gr` / `K` | Definition / references / hover |
-| `Space cd` | Diagnostic navigation mode (errors, warnings and info) |
-| `Space ce` | Error-only navigation mode |
-| `Space cg` | Git-hunk navigation mode (also in Git review) |
+| `Space cd` | Diagnostics in the editor / files with diagnostics in a browser |
+| `Space ce` | Errors in the editor / files with errors in a browser |
+| `Space cg` | Git hunks in the editor or diff panes / changed files in a browser |
 | `Space ca` | Code actions |
 | `Space cr` | Rename symbol |
 | `Space cf` | Format code |
@@ -50,9 +50,12 @@ Command history is a regular scratch split: `Ctrl-j/k` moves into/out of it, and
 In navigation modes, `n` / `N` move next / previous (counts supported); `Esc` exits.
 The status bar shows the active mode. Normal search mappings are restored on exit,
 and switching buffers/windows/tabs or entering insert mode also exits.
-`Space cd` shows the current line's diagnostics, or selects the next diagnostic if the line has none.
-Empty diagnostic/hunk lists and unavailable LSP actions report why nothing can happen.
-Rename, code actions and formatting need a language server supporting that action;
+In the editor, `Space cd` shows the current line's diagnostics, or jumps to the next diagnostic.
+In the file explorer and Git review sidebar, `Space cg/cd/ce` move the cursor to the
+nearest matching visible file row without opening it. Expand a folder or section to
+include its files. Git review matches working changes, not historical commits;
+diagnostics come from files Neovim already knows about. Open the file before using
+rename, code actions or formatting; those actions need an editing position and a language server.
 use `:checkhealth vim.lsp` to check attachment and server health.
 
 `:q` / `:quit` uses normal Neovim behavior: close the current window, exiting if it is the last.

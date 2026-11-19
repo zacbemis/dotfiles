@@ -1,9 +1,11 @@
 local M = {}
 local api = vim.api
 local mode = require("config.navigation_mode")
+local browser = require("config.browser_navigation")
 
 function M.diagnostics(errors_only)
   mode.leave()
+  if browser.start(errors_only and "error" or "diagnostic") then return end
   local severity = errors_only and vim.diagnostic.severity.ERROR or nil
   local name = errors_only and "Errors" or "Diagnostics"
   if #vim.diagnostic.get(0, { severity = severity }) == 0 then
@@ -19,8 +21,7 @@ function M.diagnostics(errors_only)
   end
   local function show()
     close_float()
-    local _, window = vim.diagnostic.open_float({ scope = "line", severity = severity, focusable = false })
-    float = window
+    float = select(2, vim.diagnostic.open_float({ scope = "line", severity = severity, focusable = false }))
   end
   local function step(count)
     close_float()
@@ -49,9 +50,7 @@ end
 
 function M.git()
   mode.leave()
-  if vim.bo.filetype == "GitReview" then
-    require("config.git_review.diffview").focus_file(api.nvim_get_current_tabpage())
-  end
+  if browser.start("git") then return end
   local step
   if vim.wo.diff then
     -- Diffview revision buffers need native diff navigation, not Gitsigns.

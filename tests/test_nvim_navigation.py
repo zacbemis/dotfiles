@@ -359,6 +359,49 @@ assert(mode.label() == '')
 assert(vim.fn.maparg('n', 'n', false, true).buffer ~= 1)
 '''
 
+EXPLORER_BROWSER = PRELUDE + r'''
+local plugin = vim.env.NVIM_PLUGINS:match('^[^:]+')
+vim.opt.runtimepath:append(vim.fs.dirname(plugin) .. '/nvim-tree.lua')
+local spec = require('plugins.explorer')[1]
+spec.config(nil, spec.opts)
+local tree = require('nvim-tree.api').tree
+local root = vim.fn.getcwd()
+local ns = api.nvim_create_namespace('explorer navigation')
+local function diagnostic(path, severity)
+  vim.diagnostic.set(ns, vim.fn.bufadd(root .. '/' .. path), {{lnum=0,col=0,severity=severity,message='diagnostic'}})
+end
+diagnostic('first.txt', vim.diagnostic.severity.WARN)
+diagnostic('staged.txt', vim.diagnostic.severity.ERROR)
+diagnostic('nested/new file.txt', vim.diagnostic.severity.ERROR)
+tree.open({path=root, current_window=true})
+local function at(file) return tree.get_node_under_cursor().absolute_path == root .. '/' .. file end
+assert(vim.wait(2000, function()
+  for _, node in ipairs(tree.get_nodes().nodes) do
+    if node.name == 'first.txt' then return node.git_status and node.git_status.file end
+  end
+end))
+press(' cg')
+assert(vim.bo.filetype == 'NvimTree' and at('first.txt'))
+press('2n')
+assert(at('tab\tname.txt'), 'counted movement follows visible tree order')
+press('N')
+assert(at('staged.txt'))
+press(' cd')
+assert(at('staged.txt'), 'entering on a match keeps the cursor there')
+press('n')
+assert(at('first.txt'), 'diagnostics mode includes warnings')
+press(' ce')
+assert(at('staged.txt'), 'errors mode skips warnings and collapsed directories')
+tree.find_file({buf=root .. '/nested/new file.txt', focus=true})
+assert(at('nested/new file.txt'))
+press('n')
+assert(at('staged.txt'))
+press('N')
+assert(at('nested/new file.txt'))
+press('<Esc>')
+assert(mode.label() == '')
+'''
+
 REVIEW_GIT = PRELUDE + r'''
 vim.cmd('runtime plugin/diffview.lua')
 require('diffview').setup(require('plugins.diffview')[1].opts)
@@ -371,9 +414,21 @@ review.select({root=vim.fn.getcwd(), kind='staged', path='staged.txt', branch_na
 review.focus_sidebar()
 assert(vim.bo.filetype == 'GitReview')
 press(' cg')
-assert(vim.wo.diff, 'entering Git navigation from the review sidebar must focus a diff pane')
-assert(mode.label():find('Git hunks', 1, true))
-press('nN')
+assert(vim.bo.filetype == 'GitReview' and not vim.wo.diff, 'browser navigation must not open a diff')
+assert(mode.label():find('Changed files', 1, true))
+assert(api.nvim_get_current_line():find('first.txt', 1, true))
+press('n')
+assert(api.nvim_get_current_line():find('new file.txt', 1, true))
+press('N')
+assert(api.nvim_get_current_line():find('first.txt', 1, true))
+local ns = api.nvim_create_namespace('review navigation')
+vim.diagnostic.set(ns, vim.fn.bufnr('first.txt'), {{lnum=0,col=0,severity=vim.diagnostic.severity.WARN,message='warn'}})
+local staged = vim.fn.bufadd(vim.fn.getcwd() .. '/staged.txt')
+vim.diagnostic.set(ns, staged, {{lnum=0,col=0,severity=vim.diagnostic.severity.ERROR,message='err'}})
+press(' cd')
+assert(api.nvim_get_current_line():find('first.txt', 1, true))
+press(' ce')
+assert(vim.bo.filetype == 'GitReview' and api.nvim_get_current_line():find('staged.txt', 1, true))
 press(' h')
 assert(api.nvim_get_current_tabpage() == editor_tab and mode.label() == '')
 press(' l')
@@ -382,6 +437,11 @@ assert(mode.label() == '', 'returning to review must not re-enter the old naviga
 press(' cg')
 press('<Esc>')
 assert(review.is_active() and mode.label() == '', 'Escape must leave the mode, not close review')
+press('l')
+assert(vim.wo.diff)
+press(' cg')
+assert(mode.label():find('Git hunks', 1, true), 'diff panes still navigate hunks')
+press('<Esc>')
 local review_window = api.nvim_get_current_win()
 local count = #api.nvim_tabpage_list_wins(0)
 press('::')
@@ -438,6 +498,10 @@ class Navigation(unittest.TestCase):
     @unittest.skipUnless(all((review_tests.PLUGINS / name).is_dir() for name in review_tests.DEPENDENCIES), 'Plugins are not installed')
     def test_git_review_navigation_and_tab_switching(self):
         review_tests.GitReview.run_lua(self, REVIEW_GIT, plugins=True)
+
+    @unittest.skipUnless((review_tests.PLUGINS / 'nvim-tree.lua').is_dir(), 'nvim-tree is not installed')
+    def test_explorer_browser_navigation(self):
+        review_tests.GitReview.run_lua(self, EXPLORER_BROWSER, plugins=True)
 
 
 if __name__ == '__main__':

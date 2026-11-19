@@ -144,6 +144,10 @@ function M.switch(id)
   if not started then current.phase = "ready"; notify(err) end
 end
 
+function M.matching_rows(matches)
+  return M.is_active() and session.sidebar:matching_rows(matches) or {}
+end
+
 function M.focus_sidebar()
   if session and session.phase == "ready" then
     api.nvim_set_current_tabpage(session.tab)
