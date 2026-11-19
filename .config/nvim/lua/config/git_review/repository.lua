@@ -1,9 +1,12 @@
 local M = {}
 
+local function command(root, args)
+  -- Polling must not rewrite .git/index: Diffview watches it and would reload the diff.
+  return vim.list_extend({ "git", "--no-optional-locks", "--literal-pathspecs", "-C", root }, args)
+end
+
 local function run(root, args, allow_failure)
-  local command = { "git", "--literal-pathspecs", "-C", root }
-  vim.list_extend(command, args)
-  local result = vim.system(command, { text = false }):wait(10000)
+  local result = vim.system(command(root, args), { text = false }):wait(10000)
   if result.code ~= 0 and not allow_failure then
     error(vim.trim(result.stderr or "Git command failed"), 0)
   end
@@ -17,7 +20,7 @@ local function fields(text)
 end
 
 function M.root(path)
-  return vim.trim(run(path, { "rev-parse", "--show-toplevel" }))
+  return (run(path, { "rev-parse", "--show-toplevel" }):gsub("\n$", ""))
 end
 
 function M.status(root)
@@ -42,10 +45,32 @@ function M.status(root)
   return { unstaged = unstaged, staged = staged }
 end
 
+local function worktrees(root)
+  local result, entry, common_dir = {}, nil, nil
+  for _, field in ipairs(fields(run(root, { "worktree", "list", "--porcelain", "-z" }))) do
+    local key, value = field:match("^(%S+) ?(.*)$")
+    if key == "worktree" then
+      entry = { path = value }
+    elseif key and entry then
+      entry[key] = value
+    elseif entry then
+      if entry.path ~= root and not entry.bare and not entry.prunable and vim.fn.isdirectory(entry.path) == 1 then
+        -- A stale registration can point at a replaced directory, even another Git repo.
+        common_dir = common_dir or run(root, { "rev-parse", "--path-format=absolute", "--git-common-dir" })
+        local location, code = run(entry.path,
+          { "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir" }, true)
+        if code == 0 and location == entry.path .. "\n" .. common_dir then result[#result + 1] = entry end
+      end
+      entry = nil
+    end
+  end
+  return result
+end
+
 function M.branches(root)
   local current, code = run(root, { "symbolic-ref", "--quiet", "HEAD" }, true)
   current = code == 0 and vim.trim(current) or nil
-  local branches, found = {}, false
+  local branches, by_ref = {}, {}
   local output = run(root, { "for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)%00",
     "refs/heads/", "refs/remotes/" })
   for line in output:gmatch("[^\n]+") do
@@ -56,19 +81,37 @@ function M.branches(root)
         remote = ref:sub(1, 13) == "refs/remotes/",
         name = ref:gsub("^refs/heads/", ""):gsub("^refs/remotes/", "") }
       branches[#branches + 1] = branch
-      found = found or branch.current
+      by_ref[ref] = branch
     end
   end
-  if not found then
+  local active = by_ref[current]
+  if not active then
     local hash, head_code = run(root, { "rev-parse", "--verify", "HEAD" }, true)
     hash = head_code == 0 and vim.trim(hash) or nil
-    branches[#branches + 1] = { ref = current or "HEAD", hash = hash, current = true, remote = false,
+    active = { ref = current or "HEAD", hash = hash, current = true, remote = false,
       name = current and current:gsub("^refs/heads/", "") or ("Detached HEAD (" .. (hash or "unknown"):sub(1, 7) .. ")") }
+    branches[#branches + 1] = active
+  end
+  active.worktree = root
+  for _, entry in ipairs(worktrees(root)) do
+    local branch = by_ref[entry.branch]
+    if branch and not branch.worktree then
+      branch.worktree = entry.path
+    else
+      -- Detached worktrees (or extra checkouts made with --force) need separate rows.
+      local hash = entry.HEAD and not entry.HEAD:match("^0+$") and entry.HEAD or nil
+      branches[#branches + 1] = { ref = entry.branch or "HEAD", hash = hash, worktree = entry.path,
+        worktree_row = true, current = false, remote = false,
+        name = branch and branch.name or (entry.branch and entry.branch:gsub("^refs/heads/", ""))
+          or (vim.fs.basename(entry.path) .. " (detached HEAD)") }
+    end
   end
   table.sort(branches, function(a, b)
     if a.current ~= b.current then return a.current end
     if a.remote ~= b.remote then return not a.remote end
-    return a.name < b.name
+    if a.name ~= b.name then return a.name < b.name end
+    if a.worktree_row ~= b.worktree_row then return not a.worktree_row end
+    return (a.worktree or "") < (b.worktree or "")
   end)
   return branches
 end
@@ -102,6 +145,13 @@ function M.commit_files(root, hash)
     index = index + 2
   end
   return files, parent
+end
+
+function M.switch(root, branch, done)
+  vim.system(command(root, { "switch", "--no-guess", "--", branch }), { text = true },
+    vim.schedule_wrap(function(result)
+      done(result.code == 0, vim.trim(result.stderr or ""))
+    end))
 end
 
 function M.stage(root, path)

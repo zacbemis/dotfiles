@@ -6,7 +6,8 @@ function M.new(root, repository)
   local nodes, old_nodes, expanded = {}, {}, {}
   local file_cache, limits, initialized = {}, {}, {}
   local history = History.new(root, repository)
-  local root_id, current_id, snapshot, status, branch_refs
+  local root_id, current_id, snapshot, branch_refs
+  local statuses = {}
   local model = {}
   local load
 
@@ -60,16 +61,19 @@ function M.new(root, repository)
   end
 
   local function load_branch(branch)
-    if branch.current then
+    if branch.worktree then
+      local status = statuses[branch.worktree] or repository.status(branch.worktree)
+      statuses[branch.worktree] = status
+      local first_visit = initialized[branch.id] ~= branch.worktree
       for _, kind in ipairs({ "unstaged", "staged" }) do
         local id = branch.id .. ":" .. kind
         local section = add({ id = id, kind = kind, parent = branch.id, branch_id = branch.id,
           label = (kind == "unstaged" and "Unstaged files" or "Staged files") .. " (" .. #status[kind] .. ")" })
         branch.children[#branch.children + 1] = id
-        if not initialized[branch.ref] then expanded[id] = true end
+        if first_visit then expanded[id] = true end
         add_files(section, status[kind])
       end
-      initialized[branch.ref] = true
+      initialized[branch.id] = branch.worktree
     end
     append_history(branch)
   end
@@ -83,18 +87,33 @@ function M.new(root, repository)
   end
 
   function model:refresh(force)
-    local next_status, branches = repository.status(root), repository.branches(root)
-    local next_snapshot = vim.json.encode({ next_status, branches })
-    if not force and next_snapshot == snapshot then return false end
+    local branches = repository.branches(root)
+    local next_statuses = { [root] = repository.status(root) }
+    for _, branch in ipairs(branches) do
+      local path = branch.worktree
+      if path and statuses[path] and not next_statuses[path] then next_statuses[path] = repository.status(path) end
+    end
+    local next_snapshot = vim.json.encode(branches)
+    if not force and next_snapshot == snapshot and vim.deep_equal(next_statuses, statuses) then return false end
     local previous_current = current_id
-    old_nodes, nodes, status, current_id, branch_refs = nodes, {}, next_status, nil, branches
+    old_nodes, nodes, statuses, current_id, branch_refs = nodes, {}, next_statuses, nil, branches
     local overview = add({ id = "branches", kind = "root", label = "Branches: " .. vim.fs.basename(root) })
     for _, branch in ipairs(branches) do
-      local id = "branch:" .. branch.ref
-      local node = add({ id = id, kind = "branch", parent = overview.id, branch_id = id,
-        ref = branch.ref, name = branch.name, hash = branch.hash, current = branch.current, remote = branch.remote,
-        label = branch.name .. (branch.current and " (current)" or branch.remote and " (remote)" or "") })
-      overview.children[#overview.children + 1] = node.id
+      local id = branch.worktree_row and ("worktree:" .. vim.json.encode(branch.worktree)) or ("branch:" .. branch.ref)
+      local path = branch.worktree
+      local worktree_label
+      if path and not branch.current then
+        worktree_label = vim.fs.relpath(root, path)
+          or (vim.fs.dirname(path) == vim.fs.dirname(root) and ("../" .. vim.fs.basename(path)))
+          or vim.fn.fnamemodify(path, ":~")
+      end
+      local badge = branch.current and " (current)" or branch.remote and " (remote)"
+        or worktree_label and (" (worktree: " .. worktree_label .. ")") or ""
+      add({ id = id, kind = "branch", parent = overview.id, branch_id = id,
+        ref = branch.ref, name = branch.name, hash = branch.hash, worktree = path, worktree_label = worktree_label,
+        remote = branch.remote, current = branch.current,
+        label = branch.name .. badge })
+      overview.children[#overview.children + 1] = id
       if branch.current then current_id = id end
     end
     assert(current_id, "The repository did not report a checked-out branch or detached HEAD.")
@@ -176,9 +195,11 @@ function M.new(root, repository)
     local section = node and nodes[node.section or node.id]
     if not section or section.kind == "root" or section.kind == "more" then return end
     local branch = nodes[section.branch_id]
-    return { root = root, kind = section.kind, hash = section.hash, name = section.name,
+    local working = section.kind == "unstaged" or section.kind == "staged"
+    return { root = working and branch.worktree or root, kind = section.kind, hash = section.hash, name = section.name,
       parent = section.parent_hash, subject = section.subject, author = section.author, id = section.id,
-      branch_ref = branch.ref, branch_name = section.branch_name or section.name or branch.name }
+      branch_id = branch.id, branch_ref = branch.ref, branch_name = section.branch_name or section.name or branch.name,
+      worktree_label = branch.worktree_label }
   end
 
   function model:selection(id)
@@ -189,7 +210,9 @@ function M.new(root, repository)
     return selection
   end
 
-  function model:initial_selection()
+  function model:initial_selection(id)
+    local node = nodes[id] or nodes[current_id]
+    local branch = nodes[node.branch_id] or nodes[current_id]
     local function first(node)
       if node.kind == "more" then return end
       load(node)
@@ -199,27 +222,45 @@ function M.new(root, repository)
         if selection then return selection end
       end
     end
-    return first(nodes[current_id]) or { root = root, kind = "unstaged",
-      branch_ref = nodes[current_id].ref, branch_name = nodes[current_id].name }
+    return first(node) or (branch.worktree and self:context(branch.id .. ":unstaged"))
+      or (branch.id ~= current_id and self:initial_selection(current_id))
+  end
+
+  function model:switch_target(id)
+    local expected = nodes[id]
+    if not expected or expected.kind ~= "branch" then
+      error("Select a branch or worktree row to switch.", 0)
+    end
+    if expected.remote then error("Remote-tracking branches are read-only; switch to a local branch.", 0) end
+    self:refresh()
+    local node = nodes[id]
+    if not node or node.worktree ~= expected.worktree or node.ref ~= expected.ref then
+      error("The branch or worktree changed; refresh Git review before switching.", 0)
+    end
+    return { current = node.current, worktree = node.worktree, name = node.name }
   end
 
   function model:can_stage(id)
     local node = nodes[id]
     local section = node and nodes[node.section or node.id]
-    return section and section.branch_id == current_id and (section.kind == "unstaged" or section.kind == "staged") or false
+    return section and nodes[section.branch_id].worktree ~= nil
+      and (section.kind == "unstaged" or section.kind == "staged") or false
   end
 
   function model:stage(id)
     if not self:can_stage(id) then error("Committed history is read-only; select an unstaged or staged file.", 0) end
-    local expected_branch = nodes[id].branch_id
+    local expected = nodes[nodes[id].branch_id]
     self:refresh()
-    local node = nodes[id]
-    if current_id ~= expected_branch then error("The checked-out branch changed; refresh Git review before staging.", 0) end
+    local branch, node = nodes[expected.id], nodes[id]
+    if not branch or branch.worktree ~= expected.worktree or branch.ref ~= expected.ref
+      or (branch.ref == "HEAD" and branch.hash ~= expected.hash) then
+      error("The checked-out branch changed or the worktree moved; refresh Git review before staging.", 0)
+    end
     if not node then error("The selected file is no longer in this section; refresh Git review.", 0) end
     local section = nodes[node.section or node.id]
-    if section.kind == "unstaged" then repository.stage(root, node.path)
-    else repository.unstage(root, node.path) end
-    local destination = expected_branch .. (section.kind == "unstaged" and ":staged" or ":unstaged")
+    if section.kind == "unstaged" then repository.stage(branch.worktree, node.path)
+    else repository.unstage(branch.worktree, node.path) end
+    local destination = branch.id .. (section.kind == "unstaged" and ":staged" or ":unstaged")
     self:refresh()
     local file_id = destination .. ":file:" .. (node.path or "")
     return nodes[file_id] and file_id or destination

@@ -108,7 +108,7 @@ print('PASS: branch folders, working-state ownership, shared commits, remote bro
 PAGINATION = r'''
 local queries, file_queries = {}, 0
 local branches = {
-  {ref='refs/heads/main', name='main', hash='main-tip', current=true},
+  {ref='refs/heads/main', name='main', hash='main-tip', current=true, worktree=vim.fn.getcwd()},
   {ref='refs/heads/other', name='other', hash='other-tip', current=false},
 }
 local repository = {

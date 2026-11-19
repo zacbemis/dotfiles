@@ -29,6 +29,9 @@ function M.new(group)
     end
     local branch = selection.kind == "branch" and selection.name or selection.branch_name or "(unknown branch)"
     title = segment("GitReviewTabBranch", branch)
+    if selection.worktree_label then
+      title = title .. segment("GitReviewTabMeta", " · worktree: " .. selection.worktree_label)
+    end
     if selection.kind ~= "branch" then
       local message
       if selection.kind == "commit" then

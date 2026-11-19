@@ -178,7 +178,7 @@ PAGINATION = r'''
 local calls = 0
 local repo = {
   status = function() return {unstaged={}, staged={}} end,
-  branches = function() return {{ref='refs/heads/main', name='main', hash='merge', current=true}} end,
+  branches = function(path) return {{ref='refs/heads/main', name='main', hash='merge', current=true, worktree=path}} end,
   commits = function(_, tip, maximum)
     calls = calls + 1
     assert(tip == 'merge')

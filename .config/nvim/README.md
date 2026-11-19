@@ -13,7 +13,7 @@ Standalone configuration using lazy.nvim, not LazyVim. Launch with `nvim`.
 - Completion, snippets, automatic bracket pairs and HTML/JSX tag handling.
 - Treesitter highlighting/folds and local Brief (`.brf`) syntax support.
 - Git gutter signs, hunk staging/blame and branch/commit review with side-by-side diffs.
-- Git review includes staged/unstaged files, local/fetched remote branches and flat merge history without checkout.
+- Git review includes staged/unstaged files across worktrees, local/fetched remote branches and flat merge history without checkout.
 - Review sidebar matches the file explorer's connected tree, icons and Git badges; its top bar shares editor-tab surfaces and follows theme changes.
 - Fixed VS Code–inspired syntax colors with live Pywal/Matugen backgrounds.
 - PDFs open in the default browser.
@@ -58,6 +58,19 @@ use `:checkhealth vim.lsp` to check attachment and server health.
 `:q` / `:quit` uses normal Neovim behavior: close the current window, exiting if it is the last.
 `Space q` closes the current file buffer (across splits) or the Git review tab, protecting unsaved changes.
 Use `:qa` to quit all windows and tabs, or `:qa!` to discard all unsaved changes.
+
+In Git review, press `H` from the current branch root to see all branches. A branch
+checked out in another worktree has a `worktree:` label; detached worktrees get
+separate rows. Expand a worktree row to see its staged and unstaged files alongside
+its history. `s` stages or unstages in that worktree's index. `Shift-L` on a
+branch or worktree row makes it the browser root without checking anything out.
+
+Press `gS` on a branch or worktree row. A local branch with no existing checkout
+is checked out in the current worktree; unsaved editor changes and Git's normal
+checkout protections still apply. A branch checked out elsewhere opens that
+worktree immediately in a separate Kitty window running Neovim (or a new editor tab
+if Kitty or a graphical display is unavailable). The original review stays open.
+Remote-tracking rows remain browse-only.
 
 ## Requirements
 

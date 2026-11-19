@@ -2,6 +2,7 @@ local M = {}
 local api = vim.api
 local repository = require("config.git_review.repository")
 local renderer = require("config.git_review.diffview")
+local tree = require("config.git_review.tree")
 local session
 
 local function notify(message)
@@ -9,7 +10,7 @@ local function notify(message)
 end
 
 local function comparison(selection)
-  return table.concat({ selection.kind, selection.hash or "", selection.path or "",
+  return table.concat({ selection.root, selection.kind, selection.hash or "", selection.path or "",
     selection.branch_name or "", selection.author or "", selection.id or "" }, "\0")
 end
 
@@ -27,12 +28,26 @@ local function update_header(current)
   current.header:update(current.tab, context or current.selection)
 end
 
+local function show_comparison(current, selection, refresh)
+  if current.selection.root == selection.root then
+    renderer.select(current.tab, selection, refresh)
+    return
+  end
+  -- Diffview owns a Git adapter and index watcher per view. Open the new
+  -- worktree before retiring the old one so a failed open leaves it usable.
+  local previous, visible = current.tab, current.sidebar:visible()
+  current.tab = renderer.open(selection)
+  renderer.close(previous)
+  api.nvim_set_current_tabpage(current.tab)
+  if visible then current.sidebar:attach() end
+end
+
 local function update_comparison(current, resolve, refresh)
   current.phase = "switching"
   current.sidebar:remember()
   local ok, selection, cursor = pcall(resolve)
   if ok then
-    local updated, err = pcall(renderer.select, current.tab, selection, refresh)
+    local updated, err = pcall(show_comparison, current, selection, refresh)
     if not updated then ok, selection = false, err end
   end
   current.phase = "ready"
@@ -62,7 +77,8 @@ function M.refresh(force)
     local window = api.nvim_get_current_win()
     local in_sidebar = vim.bo.filetype == "GitReview"
     current.sidebar:render()
-    local selection = current.model:selection(current.selection.id) or current.model:initial_selection()
+    local selection = current.model:selection(current.selection.id)
+      or current.model:initial_selection(current.selection.branch_id)
     M.select(selection, not in_sidebar, true)
     if api.nvim_win_is_valid(window) then api.nvim_set_current_win(window) end
     update_header(current)
@@ -80,8 +96,52 @@ function M.stage(id)
   if not allowed then notify(reason); return end
   update_comparison(current, function()
     local destination = current.model:stage(id)
-    return current.model:selection(destination) or current.model:initial_selection(), destination
+    return current.model:selection(destination) or current.model:initial_selection(destination), destination
   end, true)
+end
+
+local function reload_after_checkout(current)
+  local model = tree.new(current.root, repository)
+  if update_comparison(current, function() return model:initial_selection() end, true) then
+    current.model = model
+    current.sidebar:set_model(model)
+  end
+end
+
+function M.switch(id)
+  local current = session
+  if not M.is_active() then return end
+  local target = current.model:switch_target(id)
+  if target.current then return end
+  if target.worktree then
+    require("config.workspace_window").open(target.worktree)
+    return
+  end
+  local allowed, reason = renderer.can_leave(current.tab)
+  if not allowed then notify(reason); return end
+  for _, buffer in ipairs(api.nvim_list_bufs()) do
+    local path = api.nvim_buf_get_name(buffer)
+    if vim.bo[buffer].buftype == "" and vim.bo[buffer].modified and path ~= ""
+      and vim.fs.relpath(current.root, path) then
+      notify("Save or close modified files in this worktree before switching branches.")
+      return
+    end
+  end
+  current.phase = "checking_out"
+  local started, err = pcall(repository.switch, current.root, target.name, function(ok, message)
+    if session == current then current.phase = "ready" end
+    if ok then
+      local checked, failure = pcall(vim.cmd.checktime)
+      if not checked then notify(failure) end
+    end
+    if session ~= current then return end
+    if not ok then notify(message ~= "" and message or "Could not switch branches."); return end
+    local window = api.nvim_get_current_win()
+    local updated, failure = pcall(reload_after_checkout, current)
+    if api.nvim_win_is_valid(window) then api.nvim_set_current_win(window) end
+    if not updated then notify(failure) end
+  end)
+  if not started then current.phase = "ready"; notify(err) end
 end
 
 function M.focus_sidebar()
@@ -119,6 +179,11 @@ end
 function M.close()
   local current = session
   if not current or current.phase == "closing" then return true end
+  if current.phase == "checking_out" then
+    local reason = "Wait for the branch switch to finish."
+    notify(reason)
+    return false, reason
+  end
   local allowed, reason = renderer.can_leave(current.tab)
   if not allowed then notify(reason); return false, reason end
   current.phase = "closing"
@@ -131,7 +196,9 @@ end
 
 function M.on_view_closed(tab)
   renderer.closed(tab)
-  if session and session.tab == tab and session.phase == "ready" then dispose(session) end
+  if session and session.tab == tab and (session.phase == "ready" or session.phase == "checking_out") then
+    dispose(session)
+  end
 end
 
 local function directory()
@@ -147,14 +214,14 @@ function M.open()
   if session then M.focus_sidebar(); return end
   local ok, root = pcall(repository.root, directory())
   if not ok then notify(root); return end
-  local model_ok, model = pcall(require("config.git_review.tree").new, root, repository)
+  local model_ok, model = pcall(tree.new, root, repository)
   if not model_ok then notify(model); return end
-  local current = { phase = "opening", model = model,
+  local current = { phase = "opening", model = model, root = root,
     origin_tab = api.nvim_get_current_tabpage(), origin_window = api.nvim_get_current_win(),
     group = api.nvim_create_augroup("GitReviewSession", { clear = true }) }
   current.header = require("config.git_review.header").new(current.group)
   current.sidebar = require("config.git_review.sidebar").new(model, {
-    select = M.select, stage = M.stage, refresh = M.refresh, close = M.close,
+    select = M.select, stage = M.stage, switch = M.switch, refresh = M.refresh, close = M.close,
     toggle_sidebar = M.toggle_sidebar,
     context_changed = function() update_header(current) end,
   })

@@ -10,8 +10,8 @@ local function empty_buffer(buf)
     and vim.deep_equal(vim.api.nvim_buf_get_lines(buf, 0, -1, false), { "" })
 end
 
-local function open_in_place(buf)
-  M.open({ current_window = true })
+local function open_in_place(buf, path)
+  M.open({ current_window = true, path = path })
   -- Remove only the unused placeholder, never unsaved text.
   if vim.api.nvim_get_current_buf() ~= buf and empty_buffer(buf) then
     vim.api.nvim_buf_delete(buf, { force = false })
@@ -35,6 +35,13 @@ function M.open(opts)
   -- only afterwards, when the full-screen/sidebar layout is ready.
   if not opts.find_file then location.restore(saved) end
   location.remember()
+end
+
+function M.open_workspace_tab(path)
+  require("nvim-tree.api")
+  vim.cmd.tabnew()
+  vim.cmd.tcd({ args = { path }, magic = { file = false, bar = false } })
+  open_in_place(vim.api.nvim_get_current_buf(), path)
 end
 
 function M.toggle()

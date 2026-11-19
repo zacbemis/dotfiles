@@ -125,7 +125,11 @@ function M.open(selection)
     if view.panel:is_open() then view.panel:close() end
     M.select(tab, selection)
   end)
-  if not ok then M.close(tab); error(err, 0) end
+  if not ok then
+    M.close(tab)
+    if api.nvim_tabpage_is_valid(previous) then api.nvim_set_current_tabpage(previous) end
+    error(err, 0)
+  end
   return tab
 end
 

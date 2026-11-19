@@ -50,6 +50,11 @@ function M.new(model, actions)
     actions.context_changed()
   end
 
+  function sidebar:set_model(next_model)
+    model = next_model
+    self:render(model:rows()[1].id)
+  end
+
   function sidebar:remember()
     remembered = self:current() or remembered
   end
@@ -109,11 +114,14 @@ function M.new(model, actions)
   map("<CR>", function() navigate("toggle") end, "Toggle folder / open file")
   map("<2-LeftMouse>", function() navigate("toggle") end, "Toggle folder / open file")
   map("s", function() actions.stage(sidebar:current()) end, "Stage / unstage selection")
+  if actions.switch then
+    map("gS", function() actions.switch(sidebar:current()) end, "Switch local branch / open worktree in a new window")
+  end
   map("R", function() actions.refresh(true) end, "Refresh Git review")
   map("<leader>q", actions.close, "Close Git review")
   map("<leader>e", actions.toggle_sidebar, "Toggle review browser")
   map("g?", function()
-    vim.notify("Git branches\nl expand/open  L make root  h collapse/parent  H parent root / branch list\ns stage/unstage  R refresh  Space e toggle sidebar\nH/L collapse/open context in diff panes  Space q close review  :q close window")
+    vim.notify("Git branches and worktrees\nl expand/open  L make root  h collapse/parent  H parent root / branch list\ns stage/unstage  gS switch branch / open worktree window  R refresh  Space e toggle sidebar\nH/L collapse/open context in diff panes  Space q close review  :q close window")
   end, "Show review controls")
   return sidebar
 end

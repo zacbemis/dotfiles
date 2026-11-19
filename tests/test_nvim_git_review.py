@@ -48,7 +48,7 @@ assert(unstaged == node_id('unstaged:file:first.txt'))
 assert(not model:can_stage(commit_id(commits[1].hash)))
 assert(not pcall(model.stage, model, commit_id(commits[1].hash)), 'commits must be read-only')
 local many = { status = function() return {unstaged={}, staged={}} end,
-  branches = function() return {{ref='refs/heads/main', name='main', hash='tip', current=true}} end,
+  branches = function(path) return {{ref='refs/heads/main', name='main', hash='tip', current=true, worktree=path}} end,
   commits = function(_, _, maximum)
     local result = {}
     for index = 1, math.min(maximum, 110) do
@@ -88,8 +88,8 @@ local function move(from, to, path)
   error('Unexpected Git path: ' .. tostring(path))
 end
 local repository = {
-  status = function() return status end,
-  branches = function() return {{ref='refs/heads/main', name='main', hash='commit', current=true}} end,
+  status = function() return vim.deepcopy(status) end,
+  branches = function(path) return {{ref='refs/heads/main', name='main', hash='commit', current=true, worktree=path}} end,
   commits = function() return {{hash='commit', short='abc123', subject='nested files', author='Test', parents={}}} end,
   commit_files = function() return {
     {path='z/deep/shared.lua', status='M'},
