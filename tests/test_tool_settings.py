@@ -98,7 +98,7 @@ class ToolSources(unittest.TestCase):
                    ".claude/plugins/installed_plugins.json", ".codex/auth.json", ".codex/config.toml",
                    ".codex/state_5.sqlite", ".cursor/agent-cli-state.json", ".cursor/argv.json",
                    ".cursor/extensions/extensions.json", ".copilot/config.json", ".copilot/chats/private.json",
-                   ".pi/agent/auth.json", ".pi/agent/models-store.json", ".pi/agent/trust.json",
+                   ".pi/agent/auth.json", ".pi/agent/models-store.json", ".pi/agent/trust.json", ".pi/agent/remote-thread.json",
                    ".pi/agent/npm/package.json", ".pi/agent/sessions/example.jsonl", ".pi/web-search-cache/private.json",
                    ".config/cursor/cli-config.json", ".config/pi/web-search-cache/private.json",
                    ".config/nvm/versions/node/bin/node", ".config/github-copilot/apps.json", ".config/gh/hosts.yml",

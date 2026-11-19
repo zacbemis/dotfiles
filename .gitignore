@@ -60,6 +60,15 @@
 !.pi/agent/extensions/
 .pi/agent/extensions/*
 !.pi/agent/extensions/herdr-agent-state.ts
+!.pi/agent/extensions/remote-thread/
+.pi/agent/extensions/remote-thread/*
+!.pi/agent/extensions/remote-thread/index.ts
+!.pi/agent/extensions/remote-thread/handoff.ts
+!.pi/agent/extensions/remote-thread/transport.ts
+!.pi/agent/extensions/remote-thread/bridge.mjs
+!.pi/agent/extensions/remote-thread/coordination.ts
+!.pi/agent/extensions/remote-thread/native.ts
+!.pi/agent/extensions/remote-thread/mailbox.mjs
 
 .config/herdr/*
 !.config/herdr/config.toml
