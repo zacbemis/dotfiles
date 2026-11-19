@@ -83,9 +83,7 @@ plugins=(
   zsh-syntax-highlighting
 )
 
-source $ZSH/oh-my-zsh.sh
-export NVM_DIR="$HOME/.config/nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+source "$ZSH/oh-my-zsh.sh"
 
 # Keep pi-cursor aligned with the installed Cursor CLI and its regional endpoint.
 # Override either variable per command when testing a different deployment.
@@ -188,8 +186,6 @@ bindkey '^I' smart-tab
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 eval "$(direnv hook zsh)"
-export PATH="$HOME/.cargo/bin:$PATH"
-
-
-# Added by Antigravity CLI installer
-export PATH="/home/zacb/.local/bin:$PATH"
+if [[ -r "$HOME/.opam/opam-init/init.zsh" ]]; then
+  source "$HOME/.opam/opam-init/init.zsh" >/dev/null 2>&1
+fi

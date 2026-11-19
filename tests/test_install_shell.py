@@ -49,10 +49,10 @@ pathlib.Path(sys.argv[-1]).mkdir(parents=True)
     def test_nvm_initializer_uses_the_same_user_directory_as_both_shell_configs(self):
         installer = (ROOT / "install.sh").read_text()
         self.assertIn('NVM_DIR="$HOME/.config/nvm" bash -c \'source /usr/share/nvm/init-nvm.sh\'', installer)
-        for name in (".zshenv", ".zshrc"):
-            source = (ROOT / name).read_text()
-            self.assertIn('export NVM_DIR="$HOME/.config/nvm"', source)
-            self.assertIn('"$NVM_DIR/nvm.sh"', source)
+        source = (ROOT / ".zshenv").read_text()
+        self.assertIn('export NVM_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/nvm"', source)
+        self.assertIn('"$NVM_DIR/nvm.sh"', source)
+        self.assertNotIn('export NVM_DIR=', (ROOT / ".zshrc").read_text())
 
 
 if __name__ == "__main__":
