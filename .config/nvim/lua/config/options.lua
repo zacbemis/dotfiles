@@ -15,6 +15,8 @@ opt.termguicolors = true
 opt.showtabline = 2
 opt.laststatus = 3 -- One shared bottom status bar across split windows.
 opt.cmdheight = 0 -- Native : and / input temporarily covers that bottom row.
+-- Without ui2, statusline redraws erase messages within ~100ms when cmdheight is 0.
+require("vim._core.ui2").enable({ msg = { targets = "msg" } })
 opt.showmode = false -- Lualine already displays the mode.
 opt.showcmdloc = "statusline" -- Pending normal-mode commands appear in the bar.
 opt.scrolloff = 8

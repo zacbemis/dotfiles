@@ -47,6 +47,12 @@ Space-prefixed and other multi-key mappings wait indefinitely; press `Esc` to ca
 Command history is a regular scratch split: `Ctrl-j/k` moves into/out of it, and
 `Ctrl-c` does not close it. Edit a previous command or type a new one on the blank last line.
 
+`:!cmd` runs in the background instead of blocking the editor; ranged filters such as
+`:'<,'>!sort` stay native. `%`, `#` and `:!!` expand as usual. A notification reports
+the exit status, and `::` shows each command's state (running, exit code, duration) beside it.
+On a `:!` line in `::`, `go` opens that run's output in a terminal split (`Space q` closes it,
+keeping the output). Re-running a command that is still running asks to restart it.
+
 In navigation modes, `n` / `N` move next / previous (counts supported); `Esc` exits.
 The status bar shows the active mode. Normal search mappings are restored on exit,
 and switching buffers/windows/tabs or entering insert mode also exits.

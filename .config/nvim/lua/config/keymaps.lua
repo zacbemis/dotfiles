@@ -8,6 +8,15 @@ map("c", ":", function()
   end
   return ":"
 end, { expr = true, desc = "Open command history from an empty command line" })
+map("c", "<CR>", function()
+  local line = vim.fn.getcmdline()
+  if vim.fn.getcmdtype() ~= ":" or not require("config.tasks.shell_command").accepts(line) then
+    return "<CR>"
+  end
+  -- Expression mappings run under textlock, so start the task after leaving the command line.
+  vim.schedule(function() require("config.tasks.shell_command").run(line) end)
+  return "<C-c>"
+end, { expr = true, desc = "Run :!command in the background" })
 
 map("n", "<leader>cd", function()
   require("config.code_navigation").diagnostics(false)
