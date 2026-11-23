@@ -239,6 +239,7 @@ function M.apply()
     DiagnosticVirtualTextHint = "DiagnosticHint",
     LspReferenceRead = "LspReferenceText",
     LspReferenceWrite = "LspReferenceText",
+    ScrollView = "Comment",
     GitSignsChangedelete = "GitSignsChange",
     GitSignsTopdelete = "GitSignsDelete",
     GitSignsUntracked = "GitSignsAdd",

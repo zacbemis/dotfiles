@@ -13,6 +13,7 @@ Standalone configuration using lazy.nvim, not LazyVim. Launch with `nvim`.
 - Completion, snippets, automatic bracket pairs and HTML/JSX tag handling.
 - Treesitter highlighting/folds and local Brief (`.brf`) syntax support.
 - Git gutter signs, hunk staging/blame and branch/commit review with side-by-side diffs.
+- Slim right-edge scrollbar with a separate Git overview immediately to its left (green additions, amber changes, red deletions); drag the scrollbar or click a change to navigate.
 - Git review includes staged/unstaged files across worktrees, local/fetched remote branches and flat merge history without checkout.
 - Review sidebar matches the file explorer's connected tree, icons and Git badges; its top bar shares editor-tab surfaces and follows theme changes.
 - Fixed VS Code–inspired syntax colors with live Pywal/Matugen backgrounds.
