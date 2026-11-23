@@ -4,26 +4,32 @@ if exists('b:current_syntax')
 endif
 
 syntax case match
-syntax sync minlines=50
+" Design notes can be long block comments; keep highlighting correct on a direct jump.
+syntax sync fromstart
 
 syntax match briefIdentifier /\<[A-Za-z_][A-Za-z0-9_]*\>/
-" Functions have no declaration keyword; highlight names before a call/parameter list.
+" Calls and fn declarations share the same name highlighting.
 syntax match briefFunction /\<[A-Za-z_][A-Za-z0-9_]*\>\ze\s*(/
 " Nominal types conventionally start with a capital letter.
 syntax match briefType /\<[A-Z][A-Za-z0-9_]*\>/
-syntax keyword briefType bool chr str shrt ushrt int uint lng ulng flt dub Self Sym Fn
-syntax keyword briefKeyword let var const type impl trait pub ovr
-syntax keyword briefInclude import mod
-syntax keyword briefConditional if else
+syntax keyword briefType bln chr str shrt ushrt int uint lng ulng flt dbl
+syntax keyword briefKeyword let var fn as
+syntax keyword briefKeyword type nextgroup=briefTypeName skipwhite skipempty
+syntax match briefTypeName /\<[A-Za-z_][A-Za-z0-9_]*\>/ contained
+syntax keyword briefInclude mod nextgroup=briefTypeName skipwhite skipempty
+syntax keyword briefConditional if then else
 syntax keyword briefRepeat for in while
-syntax keyword briefStatement ret break continue
+syntax keyword briefStatement ret yield break continue
 syntax keyword briefBoolean true false
 syntax keyword briefOperator and or
 syntax match briefOperator /[-+*\/%=<>!&|^~?]/
 syntax match briefDelimiter /[(){}\[\],.:]/
-syntax match briefOperator /\.\./
-" A tag's colon touches its name, unlike the usual field/type annotation.
-syntax match briefSymbol /\%([A-Za-z0-9_]\)\@<!:[A-Za-z_][A-Za-z0-9_]*/
+syntax match briefOperator /\.\.\|:=\|->\||>/
+" Consume the entire tag (including error prefixes and keyword-like names).
+syntax match briefSymbol /#!\?[A-Za-z_][A-Za-z0-9_]*/
+" Checked construction and qualified abstract module types, e.g. t := [], B.t.
+syntax match briefType /\<[A-Za-z_][A-Za-z0-9_]*\>\ze\s*:=/
+syntax match briefType /\%(\.\)\@<=t\>/
 
 " Source literals are decimal (no exponent notation); don't consume range dots.
 syntax match briefNumber /\<\d\+\>/
@@ -39,6 +45,7 @@ syntax region briefComment start=+/\*+ end=+\*/+ contains=briefTodo,@Spell
 highlight default link briefIdentifier Identifier
 highlight default link briefFunction Function
 highlight default link briefType Type
+highlight default link briefTypeName Type
 highlight default link briefKeyword Keyword
 highlight default link briefInclude Include
 highlight default link briefConditional Conditional
