@@ -26,6 +26,39 @@ export interface MicrocompactMessageLike {
 	readonly content?: unknown;
 }
 
+export interface SessionBranchEntryLike {
+	readonly type: string;
+	readonly kind?: string;
+	readonly provider?: string;
+	readonly timestamp?: string;
+	readonly message?: { readonly role?: string };
+}
+
+export function findRecentCacheWarmAtMs(
+	entries: readonly SessionBranchEntryLike[] | undefined,
+	provider: string | undefined,
+): number | undefined {
+	if (!entries || entries.length === 0) return undefined;
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const entry = entries[i]!;
+		if (entry.type === "usage" && entry.kind === "cache_warm") {
+			if (provider && entry.provider && entry.provider !== provider) {
+				return undefined;
+			}
+			const parsed = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN;
+			return Number.isFinite(parsed) ? parsed : undefined;
+		}
+		if (
+			entry.type === "model_change" ||
+			entry.type === "compaction" ||
+			(entry.type === "message" && entry.message?.role === "assistant")
+		) {
+			return undefined;
+		}
+	}
+	return undefined;
+}
+
 interface ToolCallMetadata {
 	readonly name: string;
 	readonly arguments: Record<string, unknown>;
@@ -184,6 +217,7 @@ export function createMicrocompactor(options?: {
 			messages: readonly TMessage[],
 			model: MicrocompactModelLike | undefined,
 			nowMs = Date.now(),
+			lastCacheWarmAtMs?: number,
 		): TMessage[] | undefined {
 			if (process.env[MICROCOMPACT_DISABLE_ENV] === "0") {
 				lastActivityAtMs = nowMs;
@@ -191,7 +225,11 @@ export function createMicrocompactor(options?: {
 			}
 
 			const cacheTtlMs = getProviderCacheTtlMs(model);
-			const isCold = lastActivityAtMs === undefined || nowMs - lastActivityAtMs >= cacheTtlMs;
+			const effectiveLastActivityAtMs =
+				lastActivityAtMs !== undefined && lastCacheWarmAtMs !== undefined
+					? Math.max(lastActivityAtMs, lastCacheWarmAtMs)
+					: (lastActivityAtMs ?? lastCacheWarmAtMs);
+			const isCold = effectiveLastActivityAtMs === undefined || nowMs - effectiveLastActivityAtMs >= cacheTtlMs;
 			lastActivityAtMs = nowMs;
 
 			if (isCold && messages.length > 0) {

@@ -25,6 +25,7 @@ import {
 import { createFileFreshnessTracker } from "../.pi/agent/extensions/harness-tuning/file-freshness.ts";
 import {
 	createMicrocompactor,
+	findRecentCacheWarmAtMs,
 	getProviderCacheTtlMs,
 	MICROCOMPACT_DISABLE_ENV,
 } from "../.pi/agent/extensions/harness-tuning/microcompact.ts";
@@ -880,6 +881,39 @@ test("cold-cache microcompactor prunes stale tool outputs only when cold and kee
 	assert.ok(coldAgain);
 	assert.equal(mc.prunedCount, 3);
 	assert.match((coldAgain[6]!.content as { text: string }[])[0]!.text, /\[Microcompacted read of src\/recent1\.ts/);
+
+	// Recent cache_warm keeps the prefix warm across long idle waits (e.g., orchestrator awaiting peer wake).
+	const claude = { provider: "anthropic", id: "claude-opus-5-5", contextWindow: 1_000_000 };
+	mc.reset();
+	const initialClaude = mc.transformContext(makeHistory(), claude, t0);
+	assert.ok(initialClaude);
+	assert.equal(mc.prunedCount, 2);
+	const warm1 = t0 + 4.5 * 60_000;
+	const warm2 = t0 + 9 * 60_000;
+	const branch = [
+		{ type: "message", message: { role: "assistant" }, timestamp: new Date(t0).toISOString() },
+		{ type: "usage", kind: "cache_warm", provider: "anthropic", timestamp: new Date(warm1).toISOString() },
+		{ type: "usage", kind: "cache_warm", provider: "anthropic", timestamp: new Date(warm2).toISOString() },
+		{ type: "custom_message", timestamp: new Date(t0 + 11 * 60_000).toISOString() },
+	];
+	assert.equal(findRecentCacheWarmAtMs(branch, "anthropic"), warm2);
+	assert.equal(findRecentCacheWarmAtMs(branch, "openai"), undefined);
+	assert.equal(
+		findRecentCacheWarmAtMs([...branch, { type: "model_change" }], "anthropic"),
+		undefined,
+	);
+	assert.equal(
+		findRecentCacheWarmAtMs([...branch, { type: "compaction" }], "anthropic"),
+		undefined,
+	);
+	const afterWarm = mc.transformContext(extended, claude, t0 + 11 * 60_000, warm2);
+	assert.ok(afterWarm);
+	assert.equal(mc.prunedCount, 2);
+	assert.equal((afterWarm[6]!.content as { text: string }[])[0]!.text, bigRead);
+	// Once >5 min elapses after both the last turn and the last warm, microcompact resumes pruning.
+	const afterWarmExpired = mc.transformContext(extended, claude, t0 + 17 * 60_000, warm2);
+	assert.ok(afterWarmExpired);
+	assert.equal(mc.prunedCount, 3);
 
 	// Opt-out env disables microcompact.
 	process.env[MICROCOMPACT_DISABLE_ENV] = "0";

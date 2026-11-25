@@ -23,7 +23,11 @@ import {
 } from "./compaction.ts";
 import { createDoomLoopTracker } from "./doom-loop.ts";
 import { createFileFreshnessTracker } from "./file-freshness.ts";
-import { createMicrocompactor } from "./microcompact.ts";
+import {
+	createMicrocompactor,
+	findRecentCacheWarmAtMs,
+	type SessionBranchEntryLike,
+} from "./microcompact.ts";
 import {
 	type ContextMessageLike,
 	countTrailingLengthTruncations,
@@ -174,7 +178,11 @@ export default function (pi: ExtensionAPI): void {
 
 	// Cold-cache-only microcompaction (sticky per session so newly warmed cache stays intact).
 	pi.on("context", (event, ctx) => {
-		const pruned = microcompactor.transformContext(event.messages, ctx.model);
+		const lastCacheWarmAtMs = findRecentCacheWarmAtMs(
+			ctx.sessionManager.getBranch() as readonly SessionBranchEntryLike[],
+			ctx.model?.provider,
+		);
+		const pruned = microcompactor.transformContext(event.messages, ctx.model, Date.now(), lastCacheWarmAtMs);
 		if (pruned) {
 			return { messages: pruned };
 		}
