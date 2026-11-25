@@ -22,10 +22,16 @@ Pi remote-thread mailbox, wait, cancellation, and standalone restart checks (Nod
 node --experimental-transform-types --test tests/test_pi_remote_thread.ts
 ```
 
-Pi harness-tuning patch, prompt/provider tuning, read/edit ergonomics, auto-format, and explore checks:
+Pi harness-tuning, LSP diagnostics, and explore unit checks:
 
 ```bash
-node --test tests/test_pi_harness_tuning.ts
+node --experimental-transform-types --test tests/test_pi_harness_tuning.ts tests/test_pi_lsp_diagnostics.ts tests/test_pi_explore.ts
+```
+
+Live Pi harness end-to-end functional verification and Base vs Tuned A/B benchmark (requires provider login; defaults to `openai-codex/gpt-6-luna` at `low` thinking, overridable via `PI_VERIFY_MODEL` and `PI_VERIFY_THINKING`):
+
+```bash
+node --experimental-transform-types --test tests/verify_pi_harness.ts
 ```
 
 Herdr's Rust shortcut helper has its own unit and mock-socket integration tests:
