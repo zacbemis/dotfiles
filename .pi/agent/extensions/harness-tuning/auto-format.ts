@@ -51,12 +51,16 @@ async function exists(filePath: string): Promise<boolean> {
 	}
 }
 
-function isInsideDirectory(root: string, target: string): boolean {
+export function isInsideDirectory(root: string, target: string): boolean {
 	const rel = relative(resolve(root), resolve(target));
 	return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
 }
 
-async function findUp(names: readonly string[], startDir: string, stopDir: string): Promise<string | undefined> {
+export async function findUp(
+	names: readonly string[],
+	startDir: string,
+	stopDir: string,
+): Promise<string | undefined> {
 	let current = resolve(startDir);
 	const boundary = resolve(stopDir);
 	while (true) {
@@ -71,12 +75,12 @@ async function findUp(names: readonly string[], startDir: string, stopDir: strin
 	}
 }
 
-async function findNodeBin(binName: string, startDir: string, stopDir: string): Promise<string | undefined> {
+export async function findNodeBin(binName: string, startDir: string, stopDir: string): Promise<string | undefined> {
 	const binFile = process.platform === "win32" ? `${binName}.cmd` : binName;
 	return findUp([join("node_modules", ".bin", binFile)], startDir, stopDir);
 }
 
-async function findOnPath(binName: string): Promise<string | undefined> {
+export async function findOnPath(binName: string): Promise<string | undefined> {
 	const pathValue = process.env.PATH;
 	if (!pathValue) return undefined;
 	const suffix = process.platform === "win32" ? ".exe" : "";

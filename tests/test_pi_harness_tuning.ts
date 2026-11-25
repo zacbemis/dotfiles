@@ -1,14 +1,29 @@
 import { strict as assert } from "node:assert";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { computeRoutedTools, executePatchInDirectory, usesPatchModel } from "../.pi/agent/extensions/harness-tuning/apply-patch.ts";
 import { AUTO_FORMAT_DISABLE_ENV, createProjectFormatter } from "../.pi/agent/extensions/harness-tuning/auto-format.ts";
+import {
+	BASH_HYGIENE_DISABLE_ENV,
+	cleanTerminalOutput,
+	sanitizeBashToolResult,
+} from "../.pi/agent/extensions/harness-tuning/bash-hygiene.ts";
+import {
+	canonicalToolCallKey,
+	createDoomLoopTracker,
+	normalizeBashErrorSignature,
+} from "../.pi/agent/extensions/harness-tuning/doom-loop.ts";
 import { buildExploreArgs, parseExploreJsonLine, selectExploreModel } from "../.pi/agent/extensions/harness-tuning/explore.ts";
+import { createFileFreshnessTracker } from "../.pi/agent/extensions/harness-tuning/file-freshness.ts";
 import { countTrailingLengthTruncations, LENGTH_CONTINUATION_TYPE } from "../.pi/agent/extensions/harness-tuning/output-continuation.ts";
 import { applyUpdateChunks, formatMissHint, parsePatch } from "../.pi/agent/extensions/harness-tuning/patch-parser.ts";
+import {
+	createPostEditDiagnostics,
+	DIAGNOSTICS_DISABLE_ENV,
+} from "../.pi/agent/extensions/harness-tuning/post-edit-diagnostics.ts";
 import {
 	buildEnvSection,
 	buildPromptGuidelines,
@@ -406,5 +421,274 @@ fs.writeFileSync(file, fs.readFileSync(file, "utf8").trim() + "\\n// formatted\\
 	} finally {
 		await rm(configuredRepo, { recursive: true, force: true });
 		await rm(plainRepo, { recursive: true, force: true });
+	}
+});
+
+test("bash hygiene strips ANSI/OSC, collapses CR spinners and repeated lines, and slices truncated logs head+tail", async () => {
+	const noisy = [
+		"\x1b]0;Build\x07\x1b[32mPASS\x1b[0m src/a.test.ts",
+		"Downloading 10%\rDownloading 50%\rDownloading 100%\rDone",
+		"WARN: noisy line",
+		"WARN: noisy line",
+		"WARN: noisy line",
+		"WARN: noisy line",
+		"WARN: noisy line",
+		"Final line",
+	].join("\n");
+
+	const cleaned = cleanTerminalOutput(noisy);
+	assert.equal(
+		cleaned,
+		["PASS src/a.test.ts", "Done", "WARN: noisy line", "[... repeated 4 more times ...]", "Final line"].join("\n"),
+	);
+
+	// Truncated bash output with fullOutputPath switches to head+tail and preserves trailing exit code.
+	const dir = await mkdtemp(join(tmpdir(), "pi-bash-hygiene-"));
+	try {
+		const logPath = join(dir, "full.log");
+		const lines: string[] = ["\x1b[31mROOT CAUSE ERROR at line 1\x1b[0m"];
+		for (let i = 0; i < 600; i++) {
+			lines.push(`log line ${i}: ${"x".repeat(60)}`);
+		}
+		lines.push("FINAL SUMMARY: 1 failed");
+		await writeFile(logPath, lines.join("\n"), "utf-8");
+
+		const sanitized = await sanitizeBashToolResult(
+			"tail-only text\n\nCommand exited with code 1",
+			{ truncation: { truncated: true, totalLines: lines.length }, fullOutputPath: logPath },
+			true,
+			{ maxBytes: 8_192, maxLines: 80 },
+		);
+		assert.equal(sanitized.changed, true);
+		assert.match(sanitized.text, /^ROOT CAUSE ERROR at line 1/);
+		assert.match(sanitized.text, /\[\.\.\. middle omitted/);
+		assert.match(sanitized.text, /FINAL SUMMARY: 1 failed\n\nCommand exited with code 1$/);
+		assert.doesNotMatch(sanitized.text, /\x1b\[/);
+
+		// Opt-out env skips sanitization.
+		process.env[BASH_HYGIENE_DISABLE_ENV] = "0";
+		try {
+			const raw = "\x1b[31mred\x1b[0m";
+			const untouched = await sanitizeBashToolResult(raw, undefined, false);
+			assert.deepEqual(untouched, { text: raw, changed: false });
+		} finally {
+			delete process.env[BASH_HYGIENE_DISABLE_ENV];
+		}
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("doom-loop tracker detects consecutive repeats, repeated edit failures, and identical bash errors", () => {
+	assert.equal(
+		canonicalToolCallKey("grep", { b: 2, a: 1 }),
+		canonicalToolCallKey("grep", { a: 1, b: 2 }),
+	);
+	assert.equal(
+		normalizeBashErrorSignature("2026-11-25T19:00:01Z FAIL in 120ms /tmp/pi-bash-abc.log\nAssertionError: x"),
+		normalizeBashErrorSignature("2026-11-25T19:01:55Z FAIL in 980ms /tmp/pi-bash-xyz.log\nAssertionError: x"),
+	);
+
+	const tracker = createDoomLoopTracker();
+	const cwd = "/tmp/workspace";
+
+	// 1. Consecutive identical calls trigger on 3rd repeat.
+	assert.equal(
+		tracker.recordToolResult({ cwd, toolName: "grep", input: { pattern: "foo" }, isError: false, resultText: "no match" }),
+		undefined,
+	);
+	assert.equal(
+		tracker.recordToolResult({ cwd, toolName: "grep", input: { pattern: "foo" }, isError: false, resultText: "no match" }),
+		undefined,
+	);
+	const repeatNotice = tracker.recordToolResult({
+		cwd,
+		toolName: "grep",
+		input: { pattern: "foo" },
+		isError: false,
+		resultText: "no match",
+	});
+	assert.match(repeatNotice ?? "", /exact grep call 3 times consecutively/);
+
+	// 2. Repeated edit failures on same file trigger on 3rd failure, reset on fresh read.
+	tracker.reset();
+	assert.equal(
+		tracker.recordToolResult({ cwd, toolName: "edit", input: { path: "a.ts", oldText: "1" }, isError: true, resultText: "miss" }),
+		undefined,
+	);
+	assert.equal(
+		tracker.recordToolResult({ cwd, toolName: "edit", input: { path: "a.ts", oldText: "2" }, isError: true, resultText: "miss" }),
+		undefined,
+	);
+	const editNotice = tracker.recordToolResult({
+		cwd,
+		toolName: "edit",
+		input: { path: "a.ts", oldText: "3" },
+		isError: true,
+		resultText: "miss",
+	});
+	assert.match(editNotice ?? "", /edit has failed 3 times/);
+
+	// Reading the file clears its failure counter.
+	assert.equal(
+		tracker.recordToolResult({ cwd, toolName: "read", input: { path: "a.ts" }, isError: false, resultText: "content" }),
+		undefined,
+	);
+	assert.equal(
+		tracker.recordToolResult({ cwd, toolName: "edit", input: { path: "a.ts", oldText: "4" }, isError: true, resultText: "miss" }),
+		undefined,
+	);
+
+	// 3. Repeated identical bash error across intervening edits triggers on 3rd identical failure.
+	tracker.reset();
+	for (let i = 1; i <= 3; i++) {
+		const notice = tracker.recordToolResult({
+			cwd,
+			toolName: "bash",
+			input: { command: "npm test" },
+			isError: true,
+			resultText: `2026-11-25T19:00:0${i}Z FAIL test.ts (${i}00ms)\nTypeError: boom`,
+		});
+		if (i < 3) {
+			assert.equal(notice, undefined);
+			tracker.recordToolResult({
+				cwd,
+				toolName: "edit",
+				input: { path: "src.ts", oldText: `v${i}` },
+				isError: false,
+				resultText: "ok",
+			});
+		} else {
+			assert.match(notice ?? "", /failed with the same error 3 times in a row/);
+		}
+	}
+
+	// Passing run clears the streak.
+	assert.equal(
+		tracker.recordToolResult({ cwd, toolName: "bash", input: { command: "npm test" }, isError: false, resultText: "ok" }),
+		undefined,
+	);
+});
+
+test("file-freshness tracker blocks external edits until re-read and integrates with patch beforeApply", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "pi-freshness-"));
+	try {
+		const target = join(dir, "app.ts");
+		await writeFile(target, "export const v = 1;\n", "utf-8");
+		const tracker = createFileFreshnessTracker();
+
+		// Untracked files are allowed.
+		assert.equal((await tracker.checkFreshness(dir, "app.ts")).stale, false);
+
+		// Record read state; unchanged file stays fresh.
+		await tracker.recordFromDisk(dir, "app.ts");
+		assert.equal((await tracker.checkFreshness(dir, "app.ts")).stale, false);
+
+		// Simulate external edit changing mtime and content.
+		await writeFile(target, "export const v = 2; // external\n", "utf-8");
+		const future = new Date(Date.now() + 5_000);
+		await utimes(target, future, future);
+
+		const staleCheck = await tracker.checkFreshness(dir, "app.ts");
+		assert.equal(staleCheck.stale, true);
+		assert.match(staleCheck.reason ?? "", /modified on disk since it was last read/);
+
+		// Patch beforeApply rejects atomically without modifying disk.
+		const patch = `*** Begin Patch
+*** Update File: app.ts
+@@
+-export const v = 2; // external
++export const v = 3;
+*** End Patch`;
+		await assert.rejects(
+			() =>
+				executePatchInDirectory(dir, patch, undefined, async (hunks) => {
+					const check = await tracker.checkPathsForPatch(dir, hunks);
+					if (check.stale) throw new Error(check.reason);
+				}),
+			/modified on disk since it was last read/,
+		);
+		assert.equal(await readFile(target, "utf-8"), "export const v = 2; // external\n");
+
+		// Re-reading refreshes snapshot and allows patch.
+		await tracker.recordFromDisk(dir, "app.ts");
+		const applied = await executePatchInDirectory(dir, patch, undefined, async (hunks) => {
+			const check = await tracker.checkPathsForPatch(dir, hunks);
+			if (check.stale) throw new Error(check.reason);
+		});
+		assert.equal(applied.files.length, 1);
+		assert.equal(await readFile(target, "utf-8"), "export const v = 3;\n");
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("post-edit diagnostics catch JSON, JS, Python, shell, Go, and local oxlint errors silently when clean", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "pi-diag-"));
+	try {
+		const diag = createPostEditDiagnostics({ timeoutMs: 3_000 });
+
+		// Valid vs broken JSON (and JSONC tsconfig skipped).
+		await writeFile(join(dir, "ok.json"), '{"a": 1}\n', "utf-8");
+		await writeFile(join(dir, "bad.json"), '{"a": }\n', "utf-8");
+		await writeFile(join(dir, "tsconfig.json"), '{\n  // comment allowed in JSONC\n  "compilerOptions": {},\n}\n', "utf-8");
+		assert.equal(await diag.checkFile(dir, "ok.json"), undefined);
+		assert.equal(await diag.checkFile(dir, "tsconfig.json"), undefined);
+		assert.match((await diag.checkFile(dir, "bad.json")) ?? "", /Invalid JSON/);
+
+		// Valid vs broken JS via node --check.
+		await writeFile(join(dir, "ok.mjs"), "export const x = 1;\n", "utf-8");
+		await writeFile(join(dir, "bad.mjs"), "export const x = ;\n", "utf-8");
+		assert.equal(await diag.checkFile(dir, "ok.mjs"), undefined);
+		assert.match((await diag.checkFile(dir, "bad.mjs")) ?? "", /SyntaxError/);
+
+		// Valid vs broken Python (ruff / python3).
+		await writeFile(join(dir, "ok.py"), "def add(a, b):\n    return a + b\n", "utf-8");
+		await writeFile(join(dir, "bad.py"), "def broken():\n    return missing_var + 1\n", "utf-8");
+		assert.equal(await diag.checkFile(dir, "ok.py"), undefined);
+		assert.match((await diag.checkFile(dir, "bad.py")) ?? "", /F821|SyntaxError|missing_var/);
+
+		// Valid vs broken shell via bash -n.
+		await writeFile(join(dir, "ok.sh"), "if true; then echo hi; fi\n", "utf-8");
+		await writeFile(join(dir, "bad.sh"), "if true; then echo hi\n", "utf-8");
+		assert.equal(await diag.checkFile(dir, "ok.sh"), undefined);
+		assert.match((await diag.checkFile(dir, "bad.sh")) ?? "", /syntax error|unexpected end of file/i);
+
+		// Multi-file checkFiles aggregates only broken files.
+		const block = await diag.checkFiles(dir, ["ok.json", "bad.json", "ok.mjs", "bad.mjs"]);
+		assert.match(block ?? "", /^\[Diagnostics\]\n/);
+		assert.match(block ?? "", /bad\.json/);
+		assert.match(block ?? "", /bad\.mjs/);
+		assert.doesNotMatch(block ?? "", /ok\.json/);
+
+		// Project-local oxlint picked up for .ts files.
+		await mkdir(join(dir, "node_modules", ".bin"), { recursive: true });
+		const fakeOxlint = join(dir, "node_modules", ".bin", "oxlint");
+		await writeFile(
+			fakeOxlint,
+			`#!/usr/bin/env node
+const fs = require("node:fs");
+const file = process.argv[process.argv.length - 1];
+if (fs.readFileSync(file, "utf8").includes("BAD_TOKEN")) {
+  console.error(file + ":1:1 error BAD_TOKEN is forbidden");
+  process.exit(1);
+}
+`,
+			"utf-8",
+		);
+		await chmod(fakeOxlint, 0o755);
+		await writeFile(join(dir, "check.ts"), "const x = BAD_TOKEN;\n", "utf-8");
+		diag.clear();
+		assert.match((await diag.checkFile(dir, "check.ts")) ?? "", /check\.ts:1:1 error BAD_TOKEN/);
+
+		// Opt-out env disables diagnostics.
+		process.env[DIAGNOSTICS_DISABLE_ENV] = "0";
+		try {
+			assert.equal(await diag.checkFiles(dir, ["bad.json"]), undefined);
+		} finally {
+			delete process.env[DIAGNOSTICS_DISABLE_ENV];
+		}
+	} finally {
+		await rm(dir, { recursive: true, force: true });
 	}
 });

@@ -1,6 +1,6 @@
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
-import { applyUpdateChunks, parsePatch } from "./patch-parser.ts";
+import { applyUpdateChunks, type PatchHunk, parsePatch } from "./patch-parser.ts";
 
 export interface ModelLike {
 	readonly id?: string;
@@ -102,6 +102,7 @@ export async function executePatchInDirectory(
 	cwd: string,
 	patchText: string,
 	lockFile: FileLockFn = passthroughLock,
+	beforeApply?: (hunks: readonly PatchHunk[]) => Promise<void>,
 ): Promise<{ text: string; files: PatchSummaryEntry[] }> {
 	const hunks = parsePatch(patchText);
 
@@ -114,6 +115,9 @@ export async function executePatchInDirectory(
 	}
 
 	return withOrderedFileLocks(lockPaths, lockFile, async () => {
+		if (beforeApply) {
+			await beforeApply(hunks);
+		}
 		// Stage all reads and transformations in memory first so a later mismatch leaves disk untouched.
 		const staged = new Map<string, string | null>();
 		const summary: PatchSummaryEntry[] = [];
