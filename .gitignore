@@ -85,6 +85,7 @@
 !.pi/agent/extensions/harness-tuning/post-edit-diagnostics.ts
 !.pi/agent/extensions/harness-tuning/compaction.ts
 !.pi/agent/extensions/harness-tuning/microcompact.ts
+!.pi/agent/extensions/harness-tuning/read-dedup.ts
 !.pi/agent/extensions/lsp-diagnostics/
 .pi/agent/extensions/lsp-diagnostics/*
 !.pi/agent/extensions/lsp-diagnostics/index.ts

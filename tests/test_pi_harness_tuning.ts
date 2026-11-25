@@ -41,6 +41,7 @@ import {
 	createEnvCache,
 } from "../.pi/agent/extensions/harness-tuning/prompt-tuning.ts";
 import { applyProviderHeaders, tuneOpenAIResponsesPayload } from "../.pi/agent/extensions/harness-tuning/provider-tuning.ts";
+import { createReadDedupTracker, READ_DEDUP_DISABLE_ENV } from "../.pi/agent/extensions/harness-tuning/read-dedup.ts";
 import {
 	buildReadMissingPathHint,
 	clampLongLines,
@@ -887,5 +888,108 @@ test("cold-cache microcompactor prunes stale tool outputs only when cold and kee
 		assert.equal(mc.transformContext(makeHistory(), model, t0), undefined);
 	} finally {
 		delete process.env[MICROCOMPACT_DISABLE_ENV];
+	}
+});
+
+test("read-dedup tracker stubs unchanged duplicate reads, respects microcompact/edits/escape-hatch, and skips small/image reads", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "pi-read-dedup-"));
+	try {
+		const bigPath = join(dir, "big.ts");
+		const bigBody = `export const data = "${"x".repeat(1500)}";\n`;
+		await writeFile(bigPath, bigBody, "utf-8");
+
+		const tracker = createReadDedupTracker({ minDedupChars: 1_000 });
+		const pruned = new Set<string>();
+
+		// 1. First read passes through and records.
+		const r1 = await tracker.checkAndRecord({
+			cwd: dir,
+			rawPath: "big.ts",
+			toolCallId: "read-1",
+			text: bigBody,
+			isPruned: (id) => pruned.has(id),
+		});
+		assert.equal(r1.deduplicated, false);
+
+		// 2. Second identical unchanged read returns compact stub.
+		const r2 = await tracker.checkAndRecord({
+			cwd: dir,
+			rawPath: "big.ts",
+			toolCallId: "read-2",
+			text: bigBody,
+			isPruned: (id) => pruned.has(id),
+		});
+		assert.equal(r2.deduplicated, true);
+		assert.match(r2.stub ?? "", /\[Unchanged since earlier read of big\.ts/);
+
+		// 3. Escape hatch: immediate third identical read passes through so model is never trapped.
+		const r3 = await tracker.checkAndRecord({
+			cwd: dir,
+			rawPath: "big.ts",
+			toolCallId: "read-3",
+			text: bigBody,
+			isPruned: (id) => pruned.has(id),
+		});
+		assert.equal(r3.deduplicated, false);
+
+		// 4. If earlier read was pruned by microcompact, do NOT stub.
+		pruned.add("read-3");
+		const r4 = await tracker.checkAndRecord({
+			cwd: dir,
+			rawPath: "big.ts",
+			toolCallId: "read-4",
+			text: bigBody,
+			isPruned: (id) => pruned.has(id),
+		});
+		assert.equal(r4.deduplicated, false);
+
+		// 5. Disk modification invalidates cache.
+		const updatedBody = `export const data = "${"y".repeat(1600)}";\n`;
+		await writeFile(bigPath, updatedBody, "utf-8");
+		const future = new Date(Date.now() + 5_000);
+		await utimes(bigPath, future, future);
+		const r5 = await tracker.checkAndRecord({
+			cwd: dir,
+			rawPath: "big.ts",
+			toolCallId: "read-5",
+			text: updatedBody,
+		});
+		assert.equal(r5.deduplicated, false);
+
+		// 6. Explicit invalidatePath (after edit/write/patch) forces full read next time.
+		tracker.invalidatePath(dir, "big.ts");
+		const r6 = await tracker.checkAndRecord({
+			cwd: dir,
+			rawPath: "big.ts",
+			toolCallId: "read-6",
+			text: updatedBody,
+		});
+		assert.equal(r6.deduplicated, false);
+
+		// 7. Images and small reads are never stubbed.
+		const imgRead = await tracker.checkAndRecord({
+			cwd: dir,
+			rawPath: "big.ts",
+			toolCallId: "read-img",
+			text: updatedBody,
+			hasImage: true,
+		});
+		assert.equal(imgRead.deduplicated, false);
+
+		// 8. Opt-out env disables dedup.
+		process.env[READ_DEDUP_DISABLE_ENV] = "0";
+		try {
+			const disabled = await tracker.checkAndRecord({
+				cwd: dir,
+				rawPath: "big.ts",
+				toolCallId: "read-disabled",
+				text: updatedBody,
+			});
+			assert.equal(disabled.deduplicated, false);
+		} finally {
+			delete process.env[READ_DEDUP_DISABLE_ENV];
+		}
+	} finally {
+		await rm(dir, { recursive: true, force: true });
 	}
 });

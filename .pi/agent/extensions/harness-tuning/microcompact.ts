@@ -176,6 +176,10 @@ export function createMicrocompactor(options?: {
 			return prunedStubs.size;
 		},
 
+		isPruned(toolCallId: string): boolean {
+			return prunedStubs.has(toolCallId);
+		},
+
 		transformContext<TMessage extends MicrocompactMessageLike>(
 			messages: readonly TMessage[],
 			model: MicrocompactModelLike | undefined,

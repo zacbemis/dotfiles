@@ -35,6 +35,7 @@ import { PATCH_DESCRIPTION, PATCH_GRAMMAR } from "./patch-parser.ts";
 import { createPostEditDiagnostics } from "./post-edit-diagnostics.ts";
 import { buildPromptGuidelines, createEnvCache } from "./prompt-tuning.ts";
 import { applyProviderHeaders, tuneOpenAIResponsesPayload } from "./provider-tuning.ts";
+import { createReadDedupTracker } from "./read-dedup.ts";
 import {
 	buildEditMissHint,
 	buildReadMissingPathHint,
@@ -82,6 +83,7 @@ export default function (pi: ExtensionAPI): void {
 	const doomLoop = createDoomLoopTracker();
 	const warmPrefix = createWarmPrefixTracker();
 	const microcompactor = createMicrocompactor();
+	const readDedup = createReadDedupTracker();
 
 	// 1. Model-routed, grammar-constrained multi-file patch tool for GPT-5+/6+.
 	pi.registerTool({
@@ -115,13 +117,16 @@ export default function (pi: ExtensionAPI): void {
 			for (const entry of result.files) {
 				if (entry.status === "D") {
 					freshness.forget(ctx.cwd, entry.path);
+					readDedup.invalidatePath(ctx.cwd, entry.path);
 					continue;
 				}
 				if (entry.movedFrom) {
 					freshness.forget(ctx.cwd, entry.movedFrom);
+					readDedup.invalidatePath(ctx.cwd, entry.movedFrom);
 				}
 				await formatter.formatFile(ctx.cwd, entry.path, withFileMutationQueue);
 				await freshness.recordFromDisk(ctx.cwd, entry.path);
+				readDedup.invalidatePath(ctx.cwd, entry.path);
 				livePaths.push(entry.path);
 			}
 
@@ -152,6 +157,7 @@ export default function (pi: ExtensionAPI): void {
 		doomLoop.reset();
 		warmPrefix.clear();
 		microcompactor.reset();
+		readDedup.clear();
 		syncPatchRouting(ctx.model);
 	});
 
@@ -163,6 +169,7 @@ export default function (pi: ExtensionAPI): void {
 	pi.on("session_compact", () => {
 		warmPrefix.clear();
 		microcompactor.reset();
+		readDedup.clear();
 	});
 
 	// Cold-cache-only microcompaction (sticky per session so newly warmed cache stays intact).
@@ -312,6 +319,24 @@ export default function (pi: ExtensionAPI): void {
 				}
 				if (rawPath) {
 					await freshness.recordFromDisk(ctx.cwd, rawPath);
+					if (!event.parentToolCallId) {
+						const offset = typeof event.input.offset === "number" ? event.input.offset : undefined;
+						const limit = typeof event.input.limit === "number" ? event.input.limit : undefined;
+						const dedup = await readDedup.checkAndRecord({
+							cwd: ctx.cwd,
+							rawPath,
+							offset,
+							limit,
+							toolCallId: event.toolCallId,
+							text: extractTextContent(nextContent),
+							hasImage: nextContent.some((block) => block.type === "image"),
+							isPruned: (id) => microcompactor.isPruned(id),
+						});
+						if (dedup.deduplicated && dedup.stub) {
+							nextContent = [{ type: "text", text: dedup.stub }];
+							changed = true;
+						}
+					}
 				}
 			} else if (rawPath) {
 				const firstText = nextContent.find((block) => block.type === "text");
@@ -358,6 +383,7 @@ export default function (pi: ExtensionAPI): void {
 			if (rawPath) {
 				await formatter.formatFile(ctx.cwd, rawPath, withFileMutationQueue);
 				await freshness.recordFromDisk(ctx.cwd, rawPath);
+				readDedup.invalidatePath(ctx.cwd, rawPath);
 				const diagnosticBlock = await diagnostics.checkFiles(ctx.cwd, [rawPath]);
 				if (diagnosticBlock) {
 					nextContent = appendToLastTextBlock(nextContent, diagnosticBlock);
