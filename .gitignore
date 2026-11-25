@@ -117,6 +117,9 @@
 !.config/Cursor/User/keybindings.json
 !.config/Cursor/User/snippets/
 
+# Antigravity-injected workspace skills directory
+/skills/
+
 # Rust helper build artifacts (keep Cargo.lock for reproducible installs).
 /tools/herdr-control/target/
 

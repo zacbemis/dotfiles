@@ -8,6 +8,7 @@ install\.sh
 ^/tool-settings
 ^/\.agents
 ^/\.gemini
+^/skills
 __pycache__
 .*\.py[cod]
 \.stow-local-ignore
