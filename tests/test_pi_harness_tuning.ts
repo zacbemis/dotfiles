@@ -8,6 +8,7 @@ import { computeRoutedTools, executePatchInDirectory, usesPatchModel } from "../
 import { AUTO_FORMAT_DISABLE_ENV, createProjectFormatter } from "../.pi/agent/extensions/harness-tuning/auto-format.ts";
 import {
 	BASH_HYGIENE_DISABLE_ENV,
+	checkCommitAttributionGuard,
 	cleanTerminalOutput,
 	sanitizeBashToolResult,
 } from "../.pi/agent/extensions/harness-tuning/bash-hygiene.ts";
@@ -243,7 +244,7 @@ test("prompt-tuning classifies model families, builds targeted rules, and render
 
 	const claudeNoBash = buildPromptGuidelines({ model: { id: "claude-opus-5-5" }, activeTools: ["read", "grep"] });
 	assert.equal(claudeNoBash.some((r) => r.includes("echo '===='")), false);
-	assert.ok(claudeNoBash.some((r) => r.includes("surrounding comment density")));
+	assert.equal(claudeNoBash.some((r) => r.includes("surrounding comment density")), false);
 
 	const envText = buildEnvSection({
 		dateString: "Wed Nov 25 2026",
@@ -398,6 +399,33 @@ fs.writeFileSync(file, fs.readFileSync(file, "utf8").trim() + "\\n// formatted\\
 		await rm(configuredRepo, { recursive: true, force: true });
 		await rm(plainRepo, { recursive: true, force: true });
 	}
+});
+
+test("commit attribution guard blocks AI trailers in git commit and gh pr without false positives", () => {
+	assert.equal(
+		checkCommitAttributionGuard('git commit -m "feat: x\n\nCo-Authored-By: Claude Opus <noreply@anthropic.com>"')?.block,
+		true,
+	);
+	assert.equal(
+		checkCommitAttributionGuard('git add . && git commit -m "fix: y\n\nGenerated with [Claude Code](https://claude.com)"')?.block,
+		true,
+	);
+	assert.equal(
+		checkCommitAttributionGuard('gh pr create --title "feat" --body "Summary\n\n🤖 Generated with Claude Code"')?.block,
+		true,
+	);
+	assert.equal(
+		checkCommitAttributionGuard('git commit -m "chore(pi): update pi-claude-bridge config"'),
+		undefined,
+	);
+	assert.equal(
+		checkCommitAttributionGuard('git commit -m "fix(pi): block AI attribution trailers in commits"'),
+		undefined,
+	);
+	assert.equal(
+		checkCommitAttributionGuard('rg "Co-Authored-By: Claude" AGENTS.md'),
+		undefined,
+	);
 });
 
 test("bash hygiene strips ANSI/OSC, collapses CR spinners and repeated lines, and slices truncated logs head+tail", async () => {

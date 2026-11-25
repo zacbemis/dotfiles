@@ -20,6 +20,24 @@ const TRAILING_STATUS_PATTERNS = [
 	/\n\nCommand terminated without an exit code$/,
 ];
 
+const COMMIT_OR_PR_COMMAND_RE = /(?:^|[\n;&|()]\s*)(?:git\b[^\n;&|]*\bcommit\b|gh\s+pr\s+(?:create|edit)\b)/;
+const AI_ATTRIBUTION_PATTERNS = [
+	/\bco-authored-by\s*:[^\n]*(?:claude|anthropic|codex|openai|gemini|copilot|antigravity|\bai\b)/i,
+	/\b(?:generated|authored|written|created)\s+(?:with|by)\s+(?:\[?\s*)?(?:claude|anthropic|codex|copilot|cursor|antigravity|\bai\b)/i,
+	/noreply@anthropic\.com/i,
+];
+
+export function checkCommitAttributionGuard(command: string): { block: true; reason: string } | undefined {
+	if (!COMMIT_OR_PR_COMMAND_RE.test(command)) return undefined;
+	if (AI_ATTRIBUTION_PATTERNS.some((pattern) => pattern.test(command))) {
+		return {
+			block: true,
+			reason: "Remove AI/Claude attribution (Co-Authored-By / Generated with) from the commit or PR message and retry.",
+		};
+	}
+	return undefined;
+}
+
 export interface BashToolDetailsLike {
 	readonly truncation?: {
 		readonly truncated?: boolean;

@@ -13,7 +13,11 @@ import {
 	usesPatchModel,
 } from "./apply-patch.ts";
 import { createProjectFormatter } from "./auto-format.ts";
-import { type BashToolDetailsLike, sanitizeBashToolResult } from "./bash-hygiene.ts";
+import {
+	type BashToolDetailsLike,
+	checkCommitAttributionGuard,
+	sanitizeBashToolResult,
+} from "./bash-hygiene.ts";
 import {
 	type AgentMessageLike,
 	type AssistantResponseLike,
@@ -256,8 +260,11 @@ export default function (pi: ExtensionAPI): void {
 		applyProviderHeaders(event.headers, ctx.model, ctx.sessionManager.getSessionId());
 	});
 
-	// 4. Pre-execution guards: read ergonomics + stale-file external-modification guard.
+	// 4. Pre-execution guards: commit-attribution guard, read ergonomics, and stale-file guard.
 	pi.on("tool_call", async (event, ctx) => {
+		if (isToolCallEventType("bash", event)) {
+			return checkCommitAttributionGuard(event.input.command);
+		}
 		if (isToolCallEventType("edit", event) || isToolCallEventType("write", event)) {
 			const check = await freshness.checkFreshness(ctx.cwd, event.input.path);
 			if (check.stale) {

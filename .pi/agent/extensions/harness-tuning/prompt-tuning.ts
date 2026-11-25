@@ -47,10 +47,6 @@ export function buildPromptGuidelines(options: {
 			"Bias toward action when the user asks to do something rather than stopping to propose a plan, and continue until the goal is fulfilled.",
 			"Avoid invoking or re-reading skills based solely on superficial keyword overlap when they are not needed.",
 		);
-	} else if (family === "claude") {
-		rules.push(
-			"Match the surrounding comment density when editing code; add comments only for non-obvious behavior unless project instructions require otherwise.",
-		);
 	}
 
 	return rules;
