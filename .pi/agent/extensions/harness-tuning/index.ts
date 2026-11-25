@@ -1,4 +1,5 @@
 import {
+	convertToLlm,
 	type ExtensionAPI,
 	isToolCallEventType,
 	withFileMutationQueue,
@@ -13,6 +14,13 @@ import {
 } from "./apply-patch.ts";
 import { createProjectFormatter } from "./auto-format.ts";
 import { type BashToolDetailsLike, sanitizeBashToolResult } from "./bash-hygiene.ts";
+import {
+	type AgentMessageLike,
+	type AssistantResponseLike,
+	type CompactionPreparationLike,
+	createWarmPrefixTracker,
+	runWarmCompaction,
+} from "./compaction.ts";
 import { createDoomLoopTracker } from "./doom-loop.ts";
 import {
 	EXPLORE_ENV_FLAG,
@@ -20,6 +28,7 @@ import {
 	runExploreSubagent,
 } from "./explore.ts";
 import { createFileFreshnessTracker } from "./file-freshness.ts";
+import { createMicrocompactor } from "./microcompact.ts";
 import {
 	type ContextMessageLike,
 	countTrailingLengthTruncations,
@@ -87,6 +96,8 @@ export default function (pi: ExtensionAPI): void {
 	const freshness = createFileFreshnessTracker();
 	const diagnostics = createPostEditDiagnostics();
 	const doomLoop = createDoomLoopTracker();
+	const warmPrefix = createWarmPrefixTracker();
+	const microcompactor = createMicrocompactor();
 
 	// 1. Model-routed, grammar-constrained multi-file patch tool for GPT-5+/6+.
 	pi.registerTool({
@@ -155,11 +166,75 @@ export default function (pi: ExtensionAPI): void {
 		freshness.clear();
 		diagnostics.clear();
 		doomLoop.reset();
+		warmPrefix.clear();
+		microcompactor.reset();
 		syncPatchRouting(ctx.model);
 	});
 
 	pi.on("model_select", (event) => {
+		warmPrefix.clear();
 		syncPatchRouting(event.model);
+	});
+
+	pi.on("session_compact", () => {
+		warmPrefix.clear();
+		microcompactor.reset();
+	});
+
+	// Cold-cache-only microcompaction (sticky per session so newly warmed cache stays intact).
+	pi.on("context", (event, ctx) => {
+		const pruned = microcompactor.transformContext(event.messages, ctx.model);
+		if (pruned) {
+			return { messages: pruned };
+		}
+	});
+
+	// Capture exact provider transcript (post-microcompact) for warm-prefix forked compaction.
+	pi.on("context_with_system", (event) => {
+		warmPrefix.recordContextWithSystem(event.messages as readonly AgentMessageLike[]);
+	});
+
+	pi.on("message_end", (event) => {
+		warmPrefix.recordAssistantMessage(event.message as AgentMessageLike);
+	});
+
+	pi.on("session_before_compact", async (event, ctx) => {
+		const model = ctx.model;
+		const sessionId = ctx.sessionManager.getSessionId();
+		const thinkingLevel = ctx.thinkingLevel;
+		const compaction = await runWarmCompaction({
+			reason: event.reason,
+			preparation: event.preparation as unknown as CompactionPreparationLike,
+			cwd: ctx.cwd,
+			sessionId,
+			customInstructions: event.customInstructions,
+			signal: event.signal,
+			tracker: warmPrefix,
+			convertToLlm: (msgs) => convertToLlm(msgs as Parameters<typeof convertToLlm>[0]) as unknown as AgentMessageLike[],
+			completeWarm: async (messages) => {
+				if (!model) {
+					throw new Error("No active model for warm compaction");
+				}
+				const streamOptions: Record<string, unknown> = {
+					signal: event.signal,
+					sessionId,
+				};
+				if (model.reasoning && thinkingLevel && thinkingLevel !== "off") {
+					streamOptions.reasoning = thinkingLevel;
+				}
+				return (await ctx.modelRegistry
+					.streamSimple(
+						model,
+						{ messages } as Parameters<typeof ctx.modelRegistry.streamSimple>[1],
+						streamOptions as Parameters<typeof ctx.modelRegistry.streamSimple>[2],
+					)
+					.result()) as unknown as AssistantResponseLike;
+			},
+		});
+
+		if (compaction) {
+			return { compaction: compaction as never };
+		}
 	});
 
 	// 2. Per-model prompt micro-rules + cache-safe upfront <env> section.

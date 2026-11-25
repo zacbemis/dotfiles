@@ -80,6 +80,8 @@
 !.pi/agent/extensions/harness-tuning/doom-loop.ts
 !.pi/agent/extensions/harness-tuning/file-freshness.ts
 !.pi/agent/extensions/harness-tuning/post-edit-diagnostics.ts
+!.pi/agent/extensions/harness-tuning/compaction.ts
+!.pi/agent/extensions/harness-tuning/microcompact.ts
 !.pi/agent/extensions/remote-thread/
 .pi/agent/extensions/remote-thread/*
 !.pi/agent/extensions/remote-thread/index.ts

@@ -12,12 +12,23 @@ import {
 	sanitizeBashToolResult,
 } from "../.pi/agent/extensions/harness-tuning/bash-hygiene.ts";
 import {
+	COMPACTION_DISABLE_ENV,
+	createWarmPrefixTracker,
+	enrichFileOpsWithPatch,
+	runWarmCompaction,
+} from "../.pi/agent/extensions/harness-tuning/compaction.ts";
+import {
 	canonicalToolCallKey,
 	createDoomLoopTracker,
 	normalizeBashErrorSignature,
 } from "../.pi/agent/extensions/harness-tuning/doom-loop.ts";
 import { buildExploreArgs, parseExploreJsonLine, selectExploreModel } from "../.pi/agent/extensions/harness-tuning/explore.ts";
 import { createFileFreshnessTracker } from "../.pi/agent/extensions/harness-tuning/file-freshness.ts";
+import {
+	createMicrocompactor,
+	getProviderCacheTtlMs,
+	MICROCOMPACT_DISABLE_ENV,
+} from "../.pi/agent/extensions/harness-tuning/microcompact.ts";
 import { countTrailingLengthTruncations, LENGTH_CONTINUATION_TYPE } from "../.pi/agent/extensions/harness-tuning/output-continuation.ts";
 import { applyUpdateChunks, formatMissHint, parsePatch } from "../.pi/agent/extensions/harness-tuning/patch-parser.ts";
 import {
@@ -690,5 +701,228 @@ if (fs.readFileSync(file, "utf8").includes("BAD_TOKEN")) {
 		}
 	} finally {
 		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("warm-prefix compaction reuses transcript prefix, tracks patch file ops, and falls back safely on overflow/toolCall", async () => {
+	const tracker = createWarmPrefixTracker();
+	const patchText = `*** Begin Patch
+*** Add File: src/new.ts
++export const a = 1;
+*** Update File: src/old.ts
+*** Move to: src/renamed.ts
+@@
+-const x = 1;
++const x = 2;
+*** End Patch`;
+
+	const messages = [
+		{ role: "system", content: "system prompt" },
+		{ role: "user", content: [{ type: "text", text: "Refactor old.ts" }] },
+		{
+			role: "assistant",
+			content: [{ type: "toolCall", id: "call-1", name: "patch", arguments: { patch: patchText } }],
+		},
+		{
+			role: "toolResult",
+			toolCallId: "call-1",
+			toolName: "patch",
+			content: [{ type: "text", text: "Success." }],
+			details: {
+				files: [
+					{ status: "A", path: "src/new.ts" },
+					{ status: "M", path: "src/renamed.ts", movedFrom: "src/old.ts" },
+				],
+			},
+		},
+	];
+
+	tracker.recordContextWithSystem(messages);
+	tracker.recordAssistantMessage({
+		role: "assistant",
+		stopReason: "stop",
+		content: [{ type: "text", text: "Done refactoring." }],
+	});
+
+	const preparation = {
+		firstKeptEntryId: "entry-9",
+		messagesToSummarize: messages.slice(1),
+		turnPrefixMessages: [],
+		isSplitTurn: false,
+		tokensBefore: 185_000,
+		fileOps: { read: new Set(["src/read-only.ts", "src/old.ts"]), written: new Set<string>(), edited: new Set<string>() },
+	};
+
+	let capturedMessages: readonly { role: string; content?: unknown }[] = [];
+	const result = await runWarmCompaction({
+		reason: "threshold",
+		preparation,
+		cwd: "/tmp/repo",
+		sessionId: "sess-123",
+		customInstructions: "Focus on migration invariants",
+		tracker,
+		convertToLlm: (msgs) => msgs,
+		collectState: async () => "\n\n<workspace-state>\ngit status:\n M src/renamed.ts\n</workspace-state>",
+		completeWarm: async (forked) => {
+			capturedMessages = forked;
+			return {
+				role: "assistant",
+				stopReason: "stop",
+				content: [{ type: "text", text: "## Goal\nRefactor old.ts" }],
+				usage: { input: 1000, output: 120, cacheRead: 180000, cacheWrite: 0, totalTokens: 181120 },
+			};
+		},
+	});
+
+	assert.ok(result);
+	assert.equal(capturedMessages[0]?.role, "system");
+	// Includes original history + clean trailing assistant reply + compaction user prompt.
+	assert.equal(capturedMessages.length, messages.length + 2);
+	assert.equal(capturedMessages[capturedMessages.length - 2]?.role, "assistant");
+	assert.equal(capturedMessages[capturedMessages.length - 1]?.role, "user");
+	assert.match(result.summary, /^## Goal\nRefactor old\.ts/);
+	assert.match(result.summary, /<read-files>\nsrc\/read-only\.ts\n<\/read-files>/);
+	assert.match(result.summary, /<modified-files>\nsrc\/new\.ts\nsrc\/old\.ts\nsrc\/renamed\.ts\n<\/modified-files>/);
+	assert.match(result.summary, /<workspace-state>\ngit status:\n M src\/renamed\.ts\n<\/workspace-state>/);
+	assert.equal(result.details?.warmPrefix, true);
+
+	// Overflow falls back to Pi default while still enriching patch fileOps.
+	const overflowPrep = {
+		firstKeptEntryId: "entry-10",
+		messagesToSummarize: messages.slice(1),
+		turnPrefixMessages: [],
+		isSplitTurn: false,
+		tokensBefore: 250_000,
+		fileOps: { read: new Set<string>(), written: new Set<string>(), edited: new Set<string>() },
+	};
+	const overflowRes = await runWarmCompaction({
+		reason: "overflow",
+		preparation: overflowPrep,
+		cwd: "/tmp/repo",
+		tracker,
+		convertToLlm: (msgs) => msgs,
+		completeWarm: async () => {
+			throw new Error("should not call completeWarm on overflow");
+		},
+	});
+	assert.equal(overflowRes, undefined);
+	assert.ok(overflowPrep.fileOps.written.has("src/new.ts"));
+	assert.ok(overflowPrep.fileOps.edited.has("src/old.ts"));
+
+	// Tool-call response falls back safely.
+	const toolCallFallback = await runWarmCompaction({
+		reason: "manual",
+		preparation,
+		cwd: "/tmp/repo",
+		tracker,
+		convertToLlm: (msgs) => msgs,
+		completeWarm: async () => ({
+			role: "assistant",
+			stopReason: "toolUse",
+			content: [{ type: "toolCall" }],
+		}),
+	});
+	assert.equal(toolCallFallback, undefined);
+
+	// Opt-out env disables warm compaction while still enriching fileOps.
+	process.env[COMPACTION_DISABLE_ENV] = "0";
+	try {
+		const disabledPrep = {
+			...overflowPrep,
+			fileOps: { read: new Set<string>(), written: new Set<string>(), edited: new Set<string>() },
+		};
+		enrichFileOpsWithPatch(disabledPrep.fileOps, []);
+		const disabledRes = await runWarmCompaction({
+			reason: "manual",
+			preparation: disabledPrep,
+			cwd: "/tmp/repo",
+			tracker,
+			convertToLlm: (msgs) => msgs,
+			completeWarm: async () => {
+				throw new Error("should not run when disabled");
+			},
+		});
+		assert.equal(disabledRes, undefined);
+		assert.ok(disabledPrep.fileOps.written.has("src/new.ts"));
+	} finally {
+		delete process.env[COMPACTION_DISABLE_ENV];
+	}
+});
+
+test("cold-cache microcompactor prunes stale tool outputs only when cold and keeps stubs sticky on warm turns", () => {
+	assert.equal(getProviderCacheTtlMs({ provider: "anthropic", id: "claude-sonnet-4" }), 5 * 60_000);
+	assert.equal(getProviderCacheTtlMs({ provider: "openai-codex", id: "gpt-6.2-sol" }), 10 * 60_000);
+
+	const mc = createMicrocompactor({
+		keepRecentTurns: 2,
+		keepRecentToolResults: 2,
+		minPruneChars: 500,
+		minContextChars: 1_000,
+	});
+
+	const bigRead = "line\n".repeat(400);
+	const bigErr = `START_ERROR ${"e".repeat(700)} END_ERROR`;
+	const makeHistory = () => [
+		{ role: "user", content: [{ type: "text", text: "investigate" }] },
+		{
+			role: "assistant",
+			content: [
+				{ type: "toolCall", id: "c1", name: "read", arguments: { path: "src/huge.ts" } },
+				{ type: "toolCall", id: "c2", name: "bash", arguments: { command: "npm test" } },
+				{ type: "toolCall", id: "c3", name: "edit", arguments: { path: "src/huge.ts" } },
+			],
+		},
+		{ role: "toolResult", toolCallId: "c1", toolName: "read", content: [{ type: "text", text: bigRead }] },
+		{ role: "toolResult", toolCallId: "c2", toolName: "bash", isError: true, content: [{ type: "text", text: bigErr }] },
+		{ role: "toolResult", toolCallId: "c3", toolName: "edit", content: [{ type: "text", text: bigRead }] },
+		{ role: "assistant", content: [{ type: "toolCall", id: "c4", name: "read", arguments: { path: "src/recent1.ts" } }] },
+		{ role: "toolResult", toolCallId: "c4", toolName: "read", content: [{ type: "text", text: bigRead }] },
+		{ role: "assistant", content: [{ type: "toolCall", id: "c5", name: "read", arguments: { path: "src/recent2.ts" } }] },
+		{ role: "toolResult", toolCallId: "c5", toolName: "read", content: [{ type: "text", text: bigRead }] },
+	];
+
+	const model = { provider: "openai-codex", id: "gpt-6.2-sol", contextWindow: 500_000 };
+	const t0 = 1_000_000;
+
+	// First call (resumed / cold) prunes c1 and c2, preserves edit (c3) and recent turns (c4, c5).
+	const first = mc.transformContext(makeHistory(), model, t0);
+	assert.ok(first);
+	assert.equal(mc.prunedCount, 2);
+	const c1Text = (first[2]!.content as { text: string }[])[0]!.text;
+	const c2Text = (first[3]!.content as { text: string }[])[0]!.text;
+	const c3Text = (first[4]!.content as { text: string }[])[0]!.text;
+	const c4Text = (first[6]!.content as { text: string }[])[0]!.text;
+	assert.match(c1Text, /\[Microcompacted read of src\/huge\.ts/);
+	assert.match(c2Text, /\[Microcompacted bash `npm test`.*error/);
+	assert.match(c2Text, /START_ERROR/);
+	assert.match(c2Text, /END_ERROR/);
+	assert.equal(c3Text, bigRead);
+	assert.equal(c4Text, bigRead);
+
+	// Warm follow-up 30s later with a new turn: does NOT prune c4, DOES keep c1/c2 sticky for cache hit.
+	const extended = [
+		...makeHistory(),
+		{ role: "assistant", content: [{ type: "toolCall", id: "c6", name: "read", arguments: { path: "src/recent3.ts" } }] },
+		{ role: "toolResult", toolCallId: "c6", toolName: "read", content: [{ type: "text", text: bigRead }] },
+	];
+	const warm = mc.transformContext(extended, model, t0 + 30_000);
+	assert.ok(warm);
+	assert.equal(mc.prunedCount, 2);
+	assert.match((warm[2]!.content as { text: string }[])[0]!.text, /\[Microcompacted read of src\/huge\.ts/);
+	assert.equal((warm[6]!.content as { text: string }[])[0]!.text, bigRead);
+
+	// Cold again after >10 min idle: now c4 ages out and gets pruned too.
+	const coldAgain = mc.transformContext(extended, model, t0 + 12 * 60_000);
+	assert.ok(coldAgain);
+	assert.equal(mc.prunedCount, 3);
+	assert.match((coldAgain[6]!.content as { text: string }[])[0]!.text, /\[Microcompacted read of src\/recent1\.ts/);
+
+	// Opt-out env disables microcompact.
+	process.env[MICROCOMPACT_DISABLE_ENV] = "0";
+	try {
+		mc.reset();
+		assert.equal(mc.transformContext(makeHistory(), model, t0), undefined);
+	} finally {
+		delete process.env[MICROCOMPACT_DISABLE_ENV];
 	}
 });
