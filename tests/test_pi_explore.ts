@@ -6,6 +6,9 @@ test("explore model routing, CLI flags, and JSONL parsing behave deterministical
 	const available = [
 		{ provider: "openai-codex", id: "gpt-6.2-sol" },
 		{ provider: "openai-codex", id: "gpt-6.2-astra" },
+		{ provider: "openai-codex", id: "gpt-6-luna" },
+		{ provider: "openai-codex", id: "gpt-5.4" },
+		{ provider: "openai-codex", id: "gpt-5.4-mini" },
 		{ provider: "claude-bridge", id: "claude-opus-5-5" },
 		{ provider: "claude-bridge", id: "claude-sonnet-5-5" },
 	];
@@ -13,11 +16,19 @@ test("explore model routing, CLI flags, and JSONL parsing behave deterministical
 	const codexChoice = selectExploreModel({ provider: "openai-codex", id: "gpt-6.2-sol" }, available);
 	assert.deepEqual(codexChoice, { provider: "openai-codex", id: "gpt-6.2-astra" });
 
+	const gpt5Choice = selectExploreModel({ provider: "openai-codex", id: "gpt-5.4" }, available);
+	assert.deepEqual(gpt5Choice, { provider: "openai-codex", id: "gpt-5.4-mini" });
+
+	const lunaChoice = selectExploreModel({ provider: "openai-codex", id: "gpt-6-luna" }, available);
+	assert.deepEqual(lunaChoice, { provider: "openai-codex", id: "gpt-6-luna" });
+
 	const codexArgs = buildExploreArgs("Find auth entrypoints", codexChoice);
 	assert.ok(codexArgs.includes("--no-extensions"));
 	assert.ok(codexArgs.includes("--no-session"));
 	assert.ok(codexArgs.includes("read,grep,find,ls"));
 	assert.equal(codexArgs[codexArgs.indexOf("--model") + 1], "openai-codex/gpt-6.2-astra");
+	const sysPrompt = codexArgs[codexArgs.indexOf("--system-prompt") + 1] ?? "";
+	assert.match(sysPrompt, /parallelizing independent/i);
 
 	const bridgeChoice = selectExploreModel({ provider: "claude-bridge", id: "claude-opus-5-5" }, available);
 	assert.deepEqual(bridgeChoice, { provider: "claude-bridge", id: "claude-sonnet-5-5" });

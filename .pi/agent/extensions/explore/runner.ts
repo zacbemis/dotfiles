@@ -11,6 +11,7 @@ const KILL_GRACE_MS = 3_000;
 
 const EXPLORE_SYSTEM_PROMPT = `You are a fast, read-only codebase exploration subagent.
 Answer the caller's question accurately using only read, grep, find, and ls.
+- Prefer parallelizing independent find, grep, and read calls.
 - Run targeted searches first; read only the relevant slices of files.
 - Report exact file paths, symbol names, line numbers, and concise findings.
 - Do not speculate about files you did not inspect, and do not suggest edits unless asked.`;
@@ -52,6 +53,20 @@ export function selectExploreModel(
 	if (current.provider === "openai-codex" && currentId.includes("gpt-6.2-sol")) {
 		const fast = findModel("openai-codex", (id) => id === "gpt-6.2-astra");
 		if (fast) return fast;
+	}
+
+	if (currentId.includes("gpt-6") && !/(?:luna|astra|mini|nano)/.test(currentId)) {
+		const luna = findModel(current.provider, (id) => id.includes("gpt-6") && id.includes("luna"));
+		if (luna) return luna;
+		const astra = findModel(current.provider, (id) => id.includes("gpt-6") && id.includes("astra"));
+		if (astra) return astra;
+	}
+
+	if (currentId.includes("gpt-5") && !/(?:mini|nano)/.test(currentId)) {
+		const mini =
+			findModel(current.provider, (id) => id === "gpt-5.4-mini") ??
+			findModel(current.provider, (id) => id.includes("gpt-5") && id.includes("mini"));
+		if (mini) return mini;
 	}
 
 	if (currentId.includes("opus")) {
