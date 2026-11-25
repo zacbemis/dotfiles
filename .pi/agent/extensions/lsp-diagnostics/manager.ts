@@ -151,6 +151,7 @@ export function createLspDiagnosticsManager(options?: LspManagerOptions) {
 	const idleTimeoutMs = options?.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
 
 	const clients = new Map<string, LspClient>();
+	const pendingClients = new Map<string, Promise<LspClient | undefined>>();
 	const stopDirCache = new Map<string, string>();
 	const binaryCache = new Map<string, string | null>();
 	let reaperTimer: ReturnType<typeof setInterval> | undefined;
@@ -230,22 +231,40 @@ export function createLspDiagnosticsManager(options?: LspManagerOptions) {
 			clients.delete(poolKey);
 		}
 
-		const binaryPath = await getBinaryPath(spec, rootDir, stopDir);
-		if (!binaryPath) return undefined;
+		// Serialize concurrent cold starts for the same server/root so multi-file edits
+		// never spawn duplicate LSP processes or orphan a handle from shutdownAll().
+		const inFlight = pendingClients.get(poolKey);
+		if (inFlight) {
+			return inFlight;
+		}
 
-		await evictIfNeeded();
-		const client = new LspClient({
-			spec,
-			rootDir,
-			binaryPath,
-			initTimeoutMs: options?.initTimeoutMs,
-			warmWaitMs: options?.warmWaitMs,
-			coldWaitMs: options?.coldWaitMs,
-			navTimeoutMs: options?.navTimeoutMs,
-		});
-		clients.set(poolKey, client);
-		ensureReaper();
-		return client;
+		const createPromise = (async (): Promise<LspClient | undefined> => {
+			const binaryPath = await getBinaryPath(spec, rootDir, stopDir);
+			if (!binaryPath) return undefined;
+
+			await evictIfNeeded();
+			const client = new LspClient({
+				spec,
+				rootDir,
+				binaryPath,
+				initTimeoutMs: options?.initTimeoutMs,
+				warmWaitMs: options?.warmWaitMs,
+				coldWaitMs: options?.coldWaitMs,
+				navTimeoutMs: options?.navTimeoutMs,
+			});
+			clients.set(poolKey, client);
+			ensureReaper();
+			return client;
+		})();
+
+		pendingClients.set(poolKey, createPromise);
+		try {
+			return await createPromise;
+		} finally {
+			if (pendingClients.get(poolKey) === createPromise) {
+				pendingClients.delete(poolKey);
+			}
+		}
 	};
 
 	const closeDeletedPaths = (workspaceCwd: string, deletedPaths: readonly string[]): void => {
@@ -411,7 +430,13 @@ export function createLspDiagnosticsManager(options?: LspManagerOptions) {
 				clearInterval(reaperTimer);
 				reaperTimer = undefined;
 			}
-			const list = [...clients.values()];
+			const pending = [...pendingClients.values()];
+			pendingClients.clear();
+			const createdDuringShutdown = (await Promise.allSettled(pending))
+				.filter((r): r is PromiseFulfilledResult<LspClient | undefined> => r.status === "fulfilled")
+				.map((r) => r.value)
+				.filter((c): c is LspClient => Boolean(c));
+			const list = [...new Set([...clients.values(), ...createdDuringShutdown])];
 			clients.clear();
 			stopDirCache.clear();
 			binaryCache.clear();

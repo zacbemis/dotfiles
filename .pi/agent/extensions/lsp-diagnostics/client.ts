@@ -668,12 +668,18 @@ export class LspClient {
 			}
 		}
 		this.markClosed();
-		if (child && !child.killed && child.exitCode === null) {
-			try {
-				child.kill("SIGTERM");
-			} catch {
-				// Already exited.
+		if (child) {
+			child.stdin?.destroy();
+			child.stdout?.destroy();
+			child.stderr?.destroy();
+			if (!child.killed && child.exitCode === null) {
+				try {
+					child.kill("SIGTERM");
+				} catch {
+					// Already exited.
+				}
 			}
+			child.unref();
 		}
 		this.child = undefined;
 	}

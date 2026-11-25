@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -381,6 +381,79 @@ test("real typescript-language-server supports definition, references, hover, an
 		} finally {
 			await manager.shutdownAll();
 		}
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("concurrent cold-start multi-file checks spawn only a single LSP server process", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "pi-lsp-concurrent-"));
+	try {
+		const binDir = join(dir, "bin");
+		await mkdir(binDir, { recursive: true });
+		const spawnCountFile = join(dir, "spawns.log");
+		const serverPath = join(binDir, "counting-lsp");
+		await writeFile(
+			serverPath,
+			`#!/usr/bin/env node
+const fs = require("node:fs");
+fs.appendFileSync(${JSON.stringify(spawnCountFile)}, process.pid + "\\n");
+let buf = Buffer.alloc(0);
+function send(msg) {
+  const body = Buffer.from(JSON.stringify(msg), "utf8");
+  process.stdout.write("Content-Length: " + body.length + "\\r\\n\\r\\n");
+  process.stdout.write(body);
+}
+process.stdin.on("data", (chunk) => {
+  buf = Buffer.concat([buf, chunk]);
+  while (true) {
+    const idx = buf.indexOf("\\r\\n\\r\\n");
+    if (idx === -1) break;
+    const header = buf.subarray(0, idx).toString("ascii");
+    const m = /Content-Length:\\s*(\\d+)/i.exec(header);
+    if (!m) break;
+    const len = Number(m[1]);
+    if (buf.length < idx + 4 + len) break;
+    const msg = JSON.parse(buf.subarray(idx + 4, idx + 4 + len).toString("utf8"));
+    buf = buf.subarray(idx + 4 + len);
+    if (msg.method === "initialize") send({ jsonrpc: "2.0", id: msg.id, result: { capabilities: {} } });
+    else if (msg.method === "textDocument/didOpen" || msg.method === "textDocument/didChange") {
+      send({ jsonrpc: "2.0", method: "textDocument/publishDiagnostics", params: { uri: msg.params.textDocument.uri, version: msg.params.textDocument.version, diagnostics: [] } });
+    } else if (msg.method === "shutdown") send({ jsonrpc: "2.0", id: msg.id, result: null });
+    else if (msg.method === "exit") process.exit(0);
+  }
+});
+`,
+			"utf-8",
+		);
+		await chmod(serverPath, 0o755);
+		await writeFile(join(dir, "fake.config"), "{}\n");
+		await writeFile(join(dir, "a.fake"), "const a = 1;\n");
+		await writeFile(join(dir, "b.fake"), "const b = 2;\n");
+		await writeFile(join(dir, "c.fake"), "const c = 3;\n");
+
+		const manager = createLspDiagnosticsManager({
+			servers: [
+				{
+					id: "fake",
+					extensions: new Set([".fake"]),
+					rootMarkers: ["fake.config"],
+					binary: "counting-lsp",
+					args: [],
+					languageIdForExtension: () => "fake",
+				},
+			],
+			extraBinDirs: [binDir],
+		});
+		try {
+			await manager.checkFilesDetailed(dir, ["a.fake", "b.fake", "c.fake"]);
+			assert.equal(manager.activeServerCount, 1);
+			const spawns = (await readFile(spawnCountFile, "utf-8")).trim().split("\n").filter(Boolean);
+			assert.equal(spawns.length, 1, `expected 1 spawned LSP server, got ${spawns.length}`);
+		} finally {
+			await manager.shutdownAll();
+		}
+		assert.equal(manager.activeServerCount, 0);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
