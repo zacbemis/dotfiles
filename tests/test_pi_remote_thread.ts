@@ -9,7 +9,12 @@ import { test } from "node:test";
 import { setTimeout as pause } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { launchModelArgs, register, request } from "../.pi/agent/extensions/remote-thread/bridge.mjs";
-import { coordinateBash, waitForReceipt } from "../.pi/agent/extensions/remote-thread/coordination.ts";
+import {
+	coordinateBash,
+	decideOrchestratorCacheWarming,
+	ORCHESTRATOR_WARM_MIN_SAVINGS,
+	waitForReceipt,
+} from "../.pi/agent/extensions/remote-thread/coordination.ts";
 import { attachmentBytes, Handoffs, replyFrom } from "../.pi/agent/extensions/remote-thread/handoff.ts";
 import { Mailbox, mailbox } from "../.pi/agent/extensions/remote-thread/mailbox.mjs";
 import { NativeInbox, NativeThreads, REPLY_TYPE } from "../.pi/agent/extensions/remote-thread/native.ts";
@@ -499,4 +504,39 @@ test("attachment reads one bounded workspace artifact and rejects escapes and pr
 	} finally {
 		await rm(tmp, { recursive: true });
 	}
+});
+
+test("orchestrator cache warming overrides idle stop only for active peer handoffs when warming pays for itself", async t => {
+	assert.deepEqual(
+		decideOrchestratorCacheWarming({ action: "stop", warmCost: 0.005, missCost: 0.12 }, true),
+		{ action: "warm" },
+	);
+	assert.deepEqual(
+		decideOrchestratorCacheWarming({ action: "stop", warmCost: 0.01, missCost: 0.01 + ORCHESTRATOR_WARM_MIN_SAVINGS }, true),
+		{ action: "warm" },
+	);
+	assert.equal(decideOrchestratorCacheWarming({ action: "stop", warmCost: 0.005, missCost: 0.12 }, false), undefined);
+	assert.equal(decideOrchestratorCacheWarming({ action: "warm", warmCost: 0.005, missCost: 0.12 }, true), undefined);
+	assert.equal(decideOrchestratorCacheWarming({ action: "stop", warmCost: 0.01, missCost: 0.03 }, true), undefined);
+	assert.equal(decideOrchestratorCacheWarming({ action: "stop", warmCost: 0, missCost: 0 }, true), undefined);
+
+	const root = await mkdtemp(join(tmpdir(), "pi-thread-warm-state."));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const store = new Mailbox(root);
+	t.after(() => store.close());
+	const source = randomUUID();
+	const peerSession = randomUUID();
+	const id = randomUUID();
+	const target = store.rememberTarget("local", { session: peerSession, title: "worker" }, randomUUID());
+
+	assert.equal(store.hasActiveOutgoing(source), false);
+	store.enqueue(source, id, target, "run build", null, null);
+	// Pending handoffs have not been accepted by the peer yet and do not keep warming alive.
+	assert.equal(store.hasActiveOutgoing(source), false);
+	store.updateOutgoing(source, id, "pending", "queued", null, Date.now());
+	assert.equal(store.hasActiveOutgoing(source), true);
+	store.updateOutgoing(source, id, "queued", "working", null, Date.now());
+	assert.equal(store.hasActiveOutgoing(source), true);
+	store.updateOutgoing(source, id, "working", "completed", "done", Date.now());
+	assert.equal(store.hasActiveOutgoing(source), false);
 });

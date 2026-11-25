@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { type ExtensionAPI, getAgentDir, isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { ensureLink } from "./bridge.mjs";
-import { coordinateBash, REPLY_WAIT_MS } from "./coordination.ts";
+import { coordinateBash, decideOrchestratorCacheWarming, REPLY_WAIT_MS } from "./coordination.ts";
 import { Handoffs } from "./handoff.ts";
 import { NativeInbox, NativeThreads, REPLY_TYPE } from "./native.ts";
 import { parseMachines } from "./transport.ts";
@@ -49,6 +49,10 @@ export default async function (pi: ExtensionAPI) {
 	pi.on("session_shutdown", () => { native.close(); inbox.close(); });
 	pi.on("tool_call", event => {
 		if (isToolCallEventType("bash", event)) return coordinateBash(event.input, inbox.inPeerTurn);
+	});
+	pi.on("cache_warming_decision", (event, ctx) => {
+		const awaitingPeer = ctx.isIdle() && !inbox.inPeerTurn && native.hasActiveHandoffs();
+		return decideOrchestratorCacheWarming(event, awaitingPeer);
 	});
 	pi.registerTool({
 		name: "remote_thread",

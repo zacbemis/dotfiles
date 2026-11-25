@@ -224,6 +224,10 @@ export class Mailbox {
 		return this.#sql(`SELECT o.id AS receipt,o.state AS status,t.machine,t.title FROM outbox o JOIN targets t USING(target)
 			WHERE o.source=? ORDER BY o.created DESC,o.rowid DESC LIMIT 24`).all(source);
 	}
+
+	hasActiveOutgoing(source) {
+		return !!this.#sql(`SELECT 1 FROM outbox WHERE source=? AND state IN ('queued','working') LIMIT 1`).get(source);
+	}
 }
 
 let shared;

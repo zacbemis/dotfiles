@@ -3,6 +3,17 @@ import { setTimeout as pause } from "node:timers/promises";
 
 const PEER_BASH_TIMEOUT_SECONDS = 300;
 export const REPLY_WAIT_MS = 38_000;
+export const ORCHESTRATOR_WARM_MIN_SAVINGS = 0.05;
+
+export function decideOrchestratorCacheWarming(
+	event: { action: "warm" | "stop"; warmCost: number; missCost: number },
+	awaitingPeer: boolean,
+): { action: "warm" } | undefined {
+	if (event.action !== "stop" || !awaitingPeer) return undefined;
+	// Pi's idle policy assumes a 15% continuation probability; an orchestrator awaiting
+	// an active peer wake is effectively certain to resume once the peer settles.
+	return event.missCost - event.warmCost >= ORCHESTRATOR_WARM_MIN_SAVINGS ? { action: "warm" } : undefined;
+}
 
 export function coordinateBash(input: { command: string; timeout?: number }, peerTurn: boolean) {
 	if (/(?:^|[\n;&|])\s*(?:nohup\s+)(?:[^\s;&|]+\/)?pi(?=\s|$)|\b(?:while|until)\s+!?\s*kill\s+(?:-0|-s\s+0)\s/u.test(input.command)) {

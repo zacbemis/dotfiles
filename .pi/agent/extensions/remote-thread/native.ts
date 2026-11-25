@@ -252,6 +252,7 @@ export class NativeThreads {
 
 	hasTarget(id: string) { return validId(id) && !!mailbox().target(id); }
 	hasReceipt(id: string) { return validId(id) && !!mailbox().outgoing(this.#session, id); }
+	hasActiveHandoffs() { return !!this.#ctx && !this.#control.signal.aborted && mailbox().hasActiveOutgoing(this.#session); }
 	receipts() { return mailbox().receipts(this.#session); }
 
 	async launch(machineName: string, options: LaunchOptions, signal?: AbortSignal) {
