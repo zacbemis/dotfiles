@@ -22,9 +22,9 @@ export default function (pi: ExtensionAPI): void {
 		description:
 			"Run an isolated read-only subagent with read/grep/find/ls to investigate a codebase question and return concise findings without filling the main context.",
 		promptSnippet:
-			"Run an isolated read-only subagent for broad codebase discovery or multi-file tracing without bloating the main context",
+			"Run a read-only subagent for broad codebase research across large repos without filling main context",
 		promptGuidelines: [
-			"Use explore for open-ended codebase discovery or multi-file investigations; use read, grep, or find directly for known files or narrow lookups.",
+			"Use explore only for broad, unfamiliar, multi-directory research that would otherwise take many reads; prefer direct find/grep/read (or lsp) for small repos, known paths, or targeted bug fixes.",
 		],
 		parameters: exploreSchema,
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
