@@ -7,6 +7,7 @@
     ".pi/agent/AGENTS.md",
     ".pi/agent/settings.json",
     ".pi/agent/multi-pass.json",
+    ".pi/agent/skills/agent-dev-server/SKILL.md",
     ".pi/web-search.json",
     ".claude/settings.json",
     ".claude/CLAUDE.md",

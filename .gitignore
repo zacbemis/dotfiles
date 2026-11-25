@@ -57,6 +57,11 @@
 !.pi/agent/AGENTS.md
 !.pi/agent/settings.json
 !.pi/agent/multi-pass.json
+!.pi/agent/skills/
+.pi/agent/skills/*
+!.pi/agent/skills/agent-dev-server/
+.pi/agent/skills/agent-dev-server/*
+!.pi/agent/skills/agent-dev-server/SKILL.md
 !.pi/agent/extensions/
 .pi/agent/extensions/*
 !.pi/agent/extensions/herdr-agent-state.ts
