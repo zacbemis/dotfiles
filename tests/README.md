@@ -34,9 +34,6 @@ Herdr's Rust shortcut helper has its own unit and mock-socket integration tests:
 cargo test --manifest-path tools/herdr-control/Cargo.toml --locked
 ```
 
-The Rust [Herdr mobile bridge](../tools/herdr-mobile-bridge/README.md) has a
-separate smoke test using disposable Herdr and Herdr Core servers.
-
 ## Desktop checks
 
 Run on an unlocked Hyprland session:
