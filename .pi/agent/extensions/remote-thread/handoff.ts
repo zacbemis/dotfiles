@@ -3,6 +3,7 @@ import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 import { failure, herdr, isLocal, type Machine, stage } from "./transport.ts";
+import { REPLY_WAIT_MS, waitForReceipt } from "./coordination.ts";
 
 interface LiveThread {
 	pane_id: string;
@@ -24,6 +25,12 @@ interface Receipt {
 	destination: Destination;
 	id: string;
 	attachment?: string;
+}
+
+interface PaneProgress {
+	status: "submitted" | "working" | "blocked" | "completed";
+	paneStatus?: string;
+	peerReply?: string;
 }
 
 const READY = new Set(["idle", "done"]);
@@ -123,7 +130,7 @@ export class Handoffs {
 		return current;
 	}
 
-	async send(target: string, message: string, cwd: string, file: string | undefined, wait: boolean, signal?: AbortSignal) {
+	async send(target: string, message: string, cwd: string, file: string | undefined, signal?: AbortSignal) {
 		const dest = this.#destinations.get(target);
 		if (!dest) throw new Error("Choose a target from remote_thread list in this Pi session.");
 		if (!message.trim() || Buffer.byteLength(message) > 12_000 || /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/u.test(message)) throw new Error("Message must be nonempty, at most 12 KB, and contain no terminal controls.");
@@ -142,31 +149,55 @@ export class Handoffs {
 			`\n\nDo not contact the sender separately. End your final answer with a short status or requested reply in a fenced code block: put REPLY-${id} on its own first line and END-${id} on its own last line, with only the reply between them. Do not include credentials or other secrets.`;
 		this.#receipts.set(id, receipt);
 		if (this.#receipts.size > 128) this.#receipts.delete(this.#receipts.keys().next().value!);
-		const args = ["agent", "prompt", dest.thread.pane_id, prompt, ...(wait ? ["--wait", "--timeout", "45000"] : [])];
-		const result = await herdr(dest.machine, args, signal, wait ? 52_000 : 12_000);
-		if (result.code !== 0 || wait) {
-			const observation = await this.observe(id, false, signal).catch(() => ({}));
-			return { ...this.#summary(receipt), delivery: result.code === 0 ? "submitted" : "uncertain; inspect this receipt, do not resend automatically", ...observation,
-				...(result.code !== 0 && { note: failure(result) }) };
+		const result = await herdr(dest.machine, ["agent", "prompt", dest.thread.pane_id, prompt], signal, 12_000);
+		signal?.throwIfAborted();
+		const delivery = result.code === 0 ? "submitted" : "uncertain";
+		if (delivery === "submitted") {
+			try { return { ...await this.observe(id, signal), delivery }; }
+			catch (error) {
+				signal?.throwIfAborted();
+				return { ...this.#observation(receipt, { status: "submitted" }, false), delivery,
+					note: error instanceof Error ? error.message : "Could not observe the pane." };
+			}
 		}
-		return { ...this.#summary(receipt), delivery: "submitted to pane; use this receipt to check for a reply" };
+		return { ...this.#observation(receipt, { status: "submitted" }, false), delivery, ...(result.code !== 0 && { note: failure(result) }) };
 	}
 
 	#summary(receipt: Receipt) {
 		return { receipt: receipt.id, machine: receipt.destination.machine.name, pane: receipt.destination.thread.pane_id, attachment: receipt.attachment };
 	}
 
-	async observe(id: string, wait: boolean, signal?: AbortSignal) {
+	receipts() {
+		return [...this.#receipts.values()].reverse().slice(0, 24).map(info => this.#summary(info));
+	}
+
+	#observation(info: Receipt, progress: PaneProgress, waitTimedOut: boolean) {
+		return { ...this.#summary(info), ...progress, waitTimedOut, ...(progress.status !== "completed" && {
+			next: progress.status === "blocked" ? "The Herdr pane is blocked and may need user input. Check the same receipt afterward; do not resend." :
+				"Herdr-only targets cannot wake this Pi automatically. Check this receipt for a tagged reply; do not resend.",
+		}) };
+	}
+
+	async #snapshot(info: Receipt, signal?: AbortSignal): Promise<PaneProgress> {
+		const { destination, id } = info;
+		const current = await this.#current(destination, signal);
+		const paneStatus = current.agent_status;
+		if (paneStatus === "blocked" || paneStatus === "working") return { status: paneStatus, paneStatus };
+		if (READY.has(paneStatus)) {
+			const snapshot = await herdr(destination.machine, ["agent", "read", current.pane_id, "--source", "recent-unwrapped", "--lines", "80"], signal);
+			signal?.throwIfAborted();
+			const peerReply = snapshot.code === 0 ? replyFrom(snapshot.stdout, id) : undefined;
+			if (peerReply) return { status: "completed", paneStatus, peerReply };
+		}
+		// Idle can mean the input has not yet started; only the tagged result proves completion.
+		return { status: "submitted", paneStatus };
+	}
+
+	async observe(id: string, signal?: AbortSignal) {
 		const info = this.#receipts.get(id);
 		if (!info) throw new Error("That receipt is not available in this Pi session. It is not safe to infer whether a prior send was delivered.");
-		const { destination } = info;
-		let current = await this.#current(destination, signal);
-		if (wait && current.agent_status === "working") {
-			await herdr(destination.machine, ["agent", "wait", current.pane_id, "--timeout", "45000"], signal, 52_000);
-			current = await this.#current(destination, signal);
-		}
-		const snapshot = await herdr(destination.machine, ["agent", "read", current.pane_id, "--source", "recent-unwrapped", "--lines", "80"], signal);
-		const reply = snapshot.code === 0 ? replyFrom(snapshot.stdout, id) : undefined;
-		return { ...this.#summary(info), status: current.agent_status, ...(reply ? { peerReply: reply } : { note: "No tagged reply is visible yet. This does not mean delivery failed." }) };
+		const { result, waitTimedOut } = await waitForReceipt<PaneProgress>({ status: "submitted" }, budget => this.#snapshot(info, budget),
+			progress => progress.status === "completed" || progress.status === "blocked", REPLY_WAIT_MS, signal);
+		return this.#observation(info, result, waitTimedOut);
 	}
 }

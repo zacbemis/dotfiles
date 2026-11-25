@@ -16,6 +16,12 @@ python3 -m unittest discover -s tests -v
 
 Optional dependencies are skipped when unavailable. Installer and hardware actions use fixtures/mocks.
 
+Pi remote-thread mailbox, wait, cancellation, and standalone restart checks (Node 24 and `flock` from util-linux; no provider login required):
+
+```bash
+node --experimental-transform-types --test tests/test_pi_remote_thread.ts
+```
+
 Herdr's Rust shortcut helper has its own unit and mock-socket integration tests:
 
 ```bash

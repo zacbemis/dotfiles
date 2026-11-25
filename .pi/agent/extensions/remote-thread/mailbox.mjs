@@ -5,8 +5,11 @@ import { DatabaseSync } from 'node:sqlite';
 
 export const validId = value => typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value);
 const isName = value => typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,39}$/.test(value);
-export const isFinal = state => ['completed', 'failed', 'interrupted'].includes(state);
+export const isFinal = state => ['completed', 'failed', 'interrupted', 'cancelled'].includes(state);
 const MAX_ATTACHMENT = 1024 * 1024;
+const MAX_WAKE_ATTEMPTS = 3;
+const WAKE_BACKOFF_MS = 5000;
+const WAKE_FAILED = 'The receiving Pi could not restart after three attempts. Open it manually or launch a new thread.';
 
 export function validateEnvelope({ id, session, source, text, attachment, filename }) {
 	if (!validId(id) || !validId(session) || !validId(source) || source === session || typeof text !== 'string' ||
@@ -52,29 +55,86 @@ export class Mailbox {
 			);
 			CREATE INDEX IF NOT EXISTS outbox_due ON outbox(source, state, next_at);
 		`);
-		const columns = new Set(this.#sql('PRAGMA table_info(threads)').all().map(column => column.name));
-		for (const [name, type] of [['file', 'TEXT'], ['worker', 'INTEGER NOT NULL DEFAULT 0'], ['woken', 'INTEGER']]) {
-			if (!columns.has(name)) this.#db.exec(`ALTER TABLE threads ADD COLUMN ${name} ${type}`);
-		}
+		const additions = [
+			['file', 'TEXT'], ['worker', 'INTEGER NOT NULL DEFAULT 0'],
+			['model', 'TEXT'], ['thinking', 'TEXT'], ['endpoint', 'TEXT'], ['worker_token', 'TEXT'],
+			['wake_attempts', 'INTEGER NOT NULL DEFAULT 0'], ['wake_after', 'INTEGER NOT NULL DEFAULT 0'],
+		];
+		const columns = () => new Set(this.#sql('PRAGMA table_info(threads)').all().map(column => column.name));
+		const existing = columns();
+		if (additions.some(([name]) => !existing.has(name))) this.#transaction(() => {
+			const current = columns();
+			for (const [name, type] of additions) {
+				if (!current.has(name)) this.#db.exec(`ALTER TABLE threads ADD COLUMN ${name} ${type}`);
+			}
+		});
+		this.#db.exec(`CREATE TRIGGER IF NOT EXISTS reset_wake_after_claim
+			AFTER UPDATE OF state ON inbox WHEN NEW.state='working'
+			BEGIN UPDATE threads SET wake_attempts=0,wake_after=0 WHERE session=NEW.session AND wake_attempts>0; END;`);
 	}
 
 	#sql(sql) { return this.#db.prepare(sql); }
+	#transaction(fn) {
+		this.#db.exec('BEGIN IMMEDIATE');
+		try {
+			const result = fn();
+			this.#db.exec('COMMIT');
+			return result;
+		} catch (error) {
+			this.#db.exec('ROLLBACK');
+			throw error;
+		}
+	}
 	close() { this.#db.close(); }
 
 	rememberThread(thread) {
 		if (!validId(thread.session)) throw new Error('Invalid Pi session ID.');
-		this.#sql(`INSERT INTO threads (session,title,cwd,mode,seen,file,worker) VALUES (?, ?, ?, ?, ?, ?, ?)
+		this.#sql(`INSERT INTO threads (session,title,cwd,mode,seen,file,worker,model,thinking,endpoint,worker_token)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(session) DO UPDATE SET title=excluded.title,cwd=excluded.cwd,mode=excluded.mode,seen=excluded.seen,
-				file=excluded.file,worker=excluded.worker`)
-			.run(thread.session, thread.title ?? null, thread.cwd ?? null, thread.mode ?? null, Date.now(), thread.file ?? null, thread.worker ? 1 : 0);
+				file=excluded.file,worker=excluded.worker,model=excluded.model,thinking=excluded.thinking,
+				endpoint=excluded.endpoint,worker_token=excluded.worker_token`)
+			.run(thread.session, thread.title ?? null, thread.cwd ?? null, thread.mode ?? null, Date.now(), thread.file ?? null, thread.worker ? 1 : 0,
+				thread.model ?? null, thread.thinking ?? null, thread.endpoint ?? null, thread.workerToken ?? null);
 	}
 
-	// A background worker exits when idle, so queued work must be able to start it again. The lease keeps
-	// concurrent senders from starting two processes on one session file while the first is still registering.
-	claimWake(session, now, lease = 60_000) {
-		return this.#sql(`UPDATE threads SET woken=? WHERE session=? AND worker=1 AND file IS NOT NULL AND cwd IS NOT NULL
-			AND (woken IS NULL OR woken<=?) AND EXISTS(SELECT 1 FROM inbox WHERE inbox.session=threads.session AND state='queued')
-			RETURNING title,cwd,file`).get(now, session, now - lease);
+	wakeCandidate(session, now) {
+		return this.#sql(`SELECT title,cwd,file,model,thinking,endpoint,wake_attempts AS attempts FROM threads
+			WHERE session=? AND worker=1 AND wake_after<=?
+			AND EXISTS(SELECT 1 FROM inbox WHERE inbox.session=threads.session AND state='queued')`).get(session, now);
+	}
+
+	beginWake(session, now) {
+		return this.#transaction(() => {
+			const thread = this.wakeCandidate(session, now);
+			if (!thread) return;
+			if (thread.attempts >= MAX_WAKE_ATTEMPTS) {
+				this.#failQueuedWake(session);
+				return;
+			}
+			const attempts = thread.attempts + 1;
+			this.#sql('UPDATE threads SET wake_attempts=?,wake_after=? WHERE session=?')
+				.run(attempts, now + WAKE_BACKOFF_MS * 2 ** (attempts - 1), session);
+			return { ...thread, attempts };
+		});
+	}
+
+	wakeFailed(session, attempts, now) {
+		this.#transaction(() => {
+			const row = this.#sql('SELECT wake_attempts FROM threads WHERE session=?').get(session);
+			if (row?.wake_attempts !== attempts) return;
+			if (attempts >= MAX_WAKE_ATTEMPTS) this.#failQueuedWake(session);
+			else this.#sql('UPDATE threads SET wake_after=? WHERE session=?').run(now + WAKE_BACKOFF_MS * 2 ** (attempts - 1), session);
+		});
+	}
+
+	#failQueuedWake(session) {
+		this.#sql(`UPDATE inbox SET state='failed',reply=?,attachment=NULL WHERE session=? AND state='queued'`).run(WAKE_FAILED, session);
+		this.#sql('UPDATE threads SET wake_attempts=0,wake_after=0 WHERE session=?').run(session);
+	}
+
+	workerReady(session, token) {
+		return !!this.#sql('SELECT 1 FROM threads WHERE session=? AND worker_token=?').get(session, token);
 	}
 
 	threads() { return this.#sql('SELECT session,title,cwd,mode FROM threads ORDER BY seen DESC,session LIMIT 128').all(); }
@@ -103,6 +163,13 @@ export class Mailbox {
 		return this.#sql('SELECT state AS status,reply FROM inbox WHERE session=? AND id=? AND source=?').get(session, id, source) ?? null;
 	}
 
+	cancel(session, id, source) {
+		if (!validId(session) || !validId(id) || !validId(source)) throw new Error('Invalid receipt.');
+		this.#sql(`UPDATE inbox SET state='cancelled',reply='Cancelled before delivery.',attachment=NULL
+			WHERE session=? AND id=? AND source=? AND state='queued'`).run(session, id, source);
+		return this.incoming(session, id, source);
+	}
+
 	running(session) { return this.#sql(`SELECT id,owner FROM inbox WHERE session=? AND state='working'`).get(session); }
 
 	claim(session, owner) {
@@ -127,7 +194,7 @@ export class Mailbox {
 	}
 
 	outgoing(source, id) {
-		return this.#sql(`SELECT o.id,o.state AS status,o.text,o.attachment,o.filename,o.reply,o.failures,t.machine,t.session,t.title
+		return this.#sql(`SELECT o.id,o.state AS status,o.text,o.attachment,o.filename,o.reply,o.failures,o.next_at AS nextAt,t.machine,t.session,t.title
 			FROM outbox o JOIN targets t USING(target) WHERE o.source=? AND o.id=?`).get(source, id);
 	}
 
@@ -148,7 +215,7 @@ export class Mailbox {
 
 	notifications(source) {
 		return this.#sql(`SELECT o.id,o.state AS status,o.reply,t.machine,t.title FROM outbox o JOIN targets t USING(target)
-			WHERE o.source=? AND o.notified=0 AND o.state IN ('completed','failed','interrupted') ORDER BY o.created LIMIT 16`).all(source);
+			WHERE o.source=? AND o.notified=0 AND o.state IN ('completed','failed','interrupted','cancelled') ORDER BY o.created LIMIT 16`).all(source);
 	}
 
 	acknowledge(source, id) { this.#sql('UPDATE outbox SET notified=1 WHERE source=? AND id=?').run(source, id); }

@@ -1,14 +1,14 @@
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
-import { lstat, mkdir, mkdtemp, readdir, realpath, stat, unlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, open, readdir, realpath, stat, unlink, writeFile } from 'node:fs/promises';
 import { createConnection, createServer } from 'node:net';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative } from 'node:path';
 import { setTimeout as pause } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { mailbox } from './mailbox.mjs';
+import { mailbox, validId } from './mailbox.mjs';
 
 const idPattern = /^[a-f0-9-]{36}$/;
 const limit = 1500 * 1024;
@@ -16,6 +16,8 @@ const validAlias = alias => typeof alias === 'string' && /^[a-z0-9][a-z0-9-]{0,3
 const cli = fileURLToPath(import.meta.url);
 const exec = promisify(execFile);
 const root = `/tmp/pi-threads-v1-${process.getuid?.()}`;
+const WORKER_START_MS = 30_000;
+const WORKER_LOCK_FD = 3;
 
 async function registry() {
 	if (process.getuid?.() === undefined) throw new Error('Thread sockets require a Unix account.');
@@ -93,6 +95,28 @@ async function call(path, request) {
 }
 
 export async function request(input) {
+	// A Pi session or SSH relay can outlive an extension update. Build worker
+	// arguments in a fresh bridge process, not in the long-lived caller.
+	if ((input.op === 'launch' && input.mode === 'standalone') || input.op === 'mail_accept' || input.op === 'mail_status') {
+		return new Promise((resolve, reject) => {
+			const child = execFile(process.execPath, [cli, 'rpc'], {
+				timeout: input.op === 'launch' ? 60_000 : 8000, killSignal: 'SIGKILL',
+			}, (error, stdout) => {
+				if (error) { reject(new Error(`Local Pi thread bridge did not complete (${error.code ?? error.signal ?? 'unknown error'}).`)); return; }
+				try {
+					const response = JSON.parse(stdout);
+					if (response.error) throw new Error(response.error);
+					resolve(response.result);
+				} catch (error) { reject(error); }
+			});
+			child.stdin.on('error', () => {});
+			child.stdin.end(JSON.stringify(input));
+		});
+	}
+	return dispatch(input);
+}
+
+async function dispatch(input) {
 	const directory = await registry();
 	if (input.op === 'list') {
 		const sockets = (await readdir(directory)).filter(name => name.endsWith('.sock') && idPattern.test(name.slice(0, -5)));
@@ -112,6 +136,7 @@ export async function request(input) {
 	}
 	if (input.op === 'mail_accept') return wake(mailbox().accept(input), input.session);
 	if (input.op === 'mail_status') return wake(mailbox().incoming(input.session, input.id, input.source), input.session);
+	if (input.op === 'mail_cancel') return mailbox().cancel(input.session, input.id, input.source);
 	if (input.op === 'launch') return launch(input);
 	if (input.op === 'stage') {
 		if (typeof input.bytes !== 'string' || input.bytes.length > 1_398_104) throw new Error('Invalid attachment.');
@@ -162,15 +187,95 @@ async function link(target, alias) {
 
 async function wake(status, session) {
 	if (status?.status !== 'queued') return status;
-	if ((await request({ op: 'list' })).some(thread => thread.session === session)) return status;
-	const thread = mailbox().claimWake(session, Date.now());
-	if (!thread) return status;
-	const work = await workingDirectory(thread.cwd).catch(() => undefined);
-	if (!work) return status;
-	const child = spawn(process.execPath, [cli, 'worker', randomUUID(), thread.title ?? 'Pi thread', thread.file], { cwd: work, detached: true, stdio: 'ignore' });
-	child.on('error', () => {});
-	child.unref();
+	const store = mailbox();
+	const thread = store.wakeCandidate(session, Date.now());
+	if (!thread || (thread.endpoint ? await endpointAlive(thread.endpoint) :
+		(await request({ op: 'list' })).some(candidate => candidate.session === session))) return status;
+	try {
+		await startWorker(session, thread.title ?? 'Pi thread', 'resume');
+	} catch {
+		const attempt = store.beginWake(session, Date.now());
+		if (attempt) store.wakeFailed(session, attempt.attempts, Date.now());
+	}
 	return status;
+}
+
+async function startWorker(session, title, mode, ...args) {
+	if (!validId(session)) throw new Error('Invalid worker session ID.');
+	const lock = await open(join(await registry(), `${session}.lock`), 'a', 0o600);
+	try {
+		// flock applies to the open file description. Both worker and Pi inherit it,
+		// so even a worker crash cannot start another Pi before the first one exits.
+		const stdio = ['ignore', 'ignore', 'ignore', lock.fd];
+		const code = await exited(spawn('flock', ['-n', '-E', '75', String(WORKER_LOCK_FD)], { stdio }));
+		if (code === 75) return;
+		if (code !== 0) throw new Error('Could not lock the standalone worker.');
+		const child = spawn(process.execPath, [cli, 'worker', session, title, mode, ...args], { detached: true, stdio });
+		await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
+		child.unref();
+		return child;
+	} finally { await lock.close(); }
+}
+
+function exited(child) {
+	return new Promise((resolve, reject) => { child.once('exit', resolve); child.once('error', reject); });
+}
+
+async function worker(session, title, mode, cwd, ...modelArgs) {
+	if (!validId(session) || !['launch', 'resume'].includes(mode)) throw new Error('Invalid standalone worker arguments.');
+	const store = mailbox();
+	let attempt;
+	try {
+		let expectedModel, expectedThinking;
+		let sessionArgs = ['--session-id', session, '--name', title, ...modelArgs];
+		if (mode === 'resume') {
+			attempt = store.beginWake(session, Date.now());
+			if (!attempt) return;
+			cwd = attempt.cwd;
+			const file = attempt.file;
+			const exists = file && await stat(file).then(info => info.isFile(), error => {
+				if (error.code === 'ENOENT') return false;
+				throw error;
+			});
+			if (exists) sessionArgs = ['--session', file];
+			else {
+				if (!attempt.model || !attempt.thinking) throw new Error('The unsaved thread has no recorded model or thinking level.');
+				expectedModel = attempt.model;
+				expectedThinking = attempt.thinking;
+				sessionArgs = ['--session-id', session, '--name', title, ...launchModelArgs(expectedModel, expectedThinking)];
+			}
+		}
+		const work = await workingDirectory(cwd);
+		const token = randomUUID();
+		const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('HERDR_') && !['PI_SESSION_FILE', 'PI_SESSION_ID'].includes(name)));
+		const managedPi = join(homedir(), '.pi', 'agent', 'bin', 'pi');
+		const pi = await stat(managedPi).then(file => file.isFile() ? managedPi : 'pi', () => 'pi');
+		const child = spawn(pi, ['--mode', 'rpc', ...sessionArgs], { cwd: work,
+			env: { ...env, PI_THREAD_LAUNCH: session, PI_THREAD_WORKER: '1', PI_THREAD_WORKER_TOKEN: token,
+				PI_THREAD_EXPECTED_MODEL: expectedModel, PI_THREAD_EXPECTED_THINKING: expectedThinking },
+			stdio: ['pipe', 'ignore', 'ignore', WORKER_LOCK_FD] });
+		child.stdin.on('error', () => {});
+		let stopped = false;
+		const exit = exited(child).catch(() => 1).finally(() => { stopped = true; });
+		process.once('SIGTERM', () => child.stdin.end());
+		const deadline = Date.now() + WORKER_START_MS;
+		let ready = false;
+		try {
+			while (!(ready = store.workerReady(session, token)) && !stopped && Date.now() < deadline) await pause(250);
+		} finally {
+			if (!ready && !stopped) {
+				child.stdin.end();
+				const forceExit = setTimeout(() => child.kill('SIGKILL'), 5000);
+				await exit;
+				clearTimeout(forceExit);
+			}
+		}
+		if (!ready) throw new Error('Pi did not register its inbox.');
+		process.exitCode = (await exit) ?? 1;
+	} finally {
+		// Registering is not proof of successful startup: Pi may exit before claiming its first request.
+		if (attempt) store.wakeFailed(session, attempt.attempts, Date.now());
+	}
 }
 
 async function workingDirectory(cwd) {
@@ -186,10 +291,10 @@ async function launch({ mode, title, cwd, model, thinking }) {
 	const modelArgs = launchModelArgs(model, thinking);
 	const work = await workingDirectory(cwd);
 	const launchId = randomUUID();
+	let child;
 	if (mode === 'standalone') {
-		const child = spawn(process.execPath, [cli, 'worker', launchId, title, '', ...modelArgs], { cwd: work, detached: true, stdio: 'ignore' });
-		await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
-		child.unref();
+		child = await startWorker(launchId, title, 'launch', work, ...modelArgs);
+		if (!child) throw new Error('Could not start the standalone worker.');
 	} else {
 		const herdr = async (args, timeout = 8000) => JSON.parse((await exec('herdr', args, { timeout })).stdout).result;
 		const { workspaces } = await herdr(['workspace', 'list']);
@@ -199,12 +304,16 @@ async function launch({ mode, title, cwd, model, thinking }) {
 		try { await herdr(['agent', 'start', `pi-${launchId.slice(0, 8)}`, '--kind', 'pi', '--pane', root_pane.pane_id, '--', '--name', title, ...modelArgs], 32_000); }
 		catch { throw new Error(`Created Herdr pane ${root_pane.pane_id}, but Pi did not start cleanly. Check the pane rather than launching again.`); }
 	}
-	for (let attempt = 0; attempt < 60; attempt++) {
+	const deadline = Date.now() + (mode === 'standalone' ? WORKER_START_MS + 1000 : 15_000);
+	while (Date.now() < deadline) {
+		if (child && (child.exitCode !== null || child.signalCode !== null)) {
+			throw new Error(`Standalone Pi worker exited before registration (${child.signalCode ?? `exit code ${child.exitCode}`}).`);
+		}
 		const thread = (await request({ op: 'list' })).find(candidate => candidate.launchId === launchId);
 		if (thread) return thread;
 		await pause(250);
 	}
-	throw new Error('Pi did not register. Check discovery before starting another thread.');
+	throw new Error(`${mode === 'standalone' ? 'Standalone Pi worker' : 'Herdr Pi'} registration timed out. Check discovery before starting another thread.`);
 }
 
 export function launchModelArgs(model, thinking) {
@@ -227,21 +336,12 @@ async function main() {
 				if (size > limit) throw new Error('Request is too large.');
 				chunks.push(chunk);
 			}
-			console.log(JSON.stringify({ result: await request(JSON.parse(Buffer.concat(chunks).toString('utf8'))) }));
+			console.log(JSON.stringify({ result: await dispatch(JSON.parse(Buffer.concat(chunks).toString('utf8'))) }));
 		} catch (error) {
 			console.log(JSON.stringify({ error: String(error.message).slice(0, 512) }));
 		}
 	} else if (process.argv[2] === 'worker') {
-		const [, , , launchId, title, sessionFile, ...modelArgs] = process.argv;
-		const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('HERDR_') && !['PI_SESSION_FILE', 'PI_SESSION_ID'].includes(name)));
-		const managedPi = join(homedir(), '.pi', 'agent', 'bin', 'pi');
-		const pi = await stat(managedPi).then(file => file.isFile() ? managedPi : 'pi', () => 'pi');
-		const args = sessionFile ? ['--mode', 'rpc', '--session', sessionFile] : ['--mode', 'rpc', '--name', title, ...modelArgs];
-		const child = spawn(pi, args, { env: { ...env, PI_THREAD_LAUNCH: launchId, PI_THREAD_WORKER: '1' }, stdio: ['pipe', 'ignore', 'ignore'] });
-		child.stdin.on('error', () => {});
-		child.on('exit', code => { process.exitCode = code ?? 1; });
-		child.on('error', () => { process.exitCode = 1; });
-		process.once('SIGTERM', () => child.stdin.end());
+		await worker(...process.argv.slice(3));
 	}
 }
 

@@ -1,17 +1,17 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "node:crypto";
-import { setTimeout as pause } from "node:timers/promises";
 import { endpointAlive, register } from "./bridge.mjs";
 import { attachmentBytes } from "./handoff.ts";
 import { isFinal, mailbox, validId } from "./mailbox.mjs";
 import { type Machine, callBridge, isLocal, stage } from "./transport.ts";
+import { REPLY_WAIT_MS, waitForReceipt } from "./coordination.ts";
 
 const TYPE = "pi-thread-request";
 export const REPLY_TYPE = "pi-thread-reply";
 const INTERRUPTED = "The receiving Pi stopped after claiming this request. It may have made changes. The request was not replayed.";
 
 type Final = "completed" | "failed" | "interrupted";
-type Status = "pending" | "queued" | "working" | Final;
+type Status = "pending" | "queued" | "working" | "cancelled" | Final;
 interface Observed { status: Status; reply?: string | null }
 interface Thread {
 	session: string;
@@ -46,6 +46,7 @@ interface Outgoing extends Observed {
 	attachment: string | null;
 	filename: string | null;
 	failures: number;
+	nextAt: number;
 }
 
 export class NativeInbox {
@@ -71,12 +72,23 @@ export class NativeInbox {
 			status: this.#uiDepth ? "blocked" : this.#active || !ctx.isIdle() ? "working" : "idle", launchId: process.env.PI_THREAD_LAUNCH,
 			model: ctx.model && `${ctx.model.provider}/${ctx.model.id}`, thinking: ctx.thinkingLevel,
 		});
-		mailbox().rememberThread({ ...info(), file: ctx.sessionManager.getSessionFile(), worker: process.env.PI_THREAD_WORKER === "1" });
+		const expectedModel = process.env.PI_THREAD_EXPECTED_MODEL, expectedThinking = process.env.PI_THREAD_EXPECTED_THINKING;
+		const starting = info();
+		if ((expectedModel && expectedModel !== starting.model) || (expectedThinking && expectedThinking !== starting.thinking)) {
+			throw new Error("The standalone Pi did not restore the unsaved thread's model and thinking level.");
+		}
 		this.#close = await register(this.endpoint, (request: { op?: string }) => {
 			if (request?.op !== "info") throw new Error("Use the durable mailbox to contact this thread.");
 			return info();
 		});
 		if (this.#stopped) { this.#close(); return; }
+		try {
+			mailbox().rememberThread({ ...starting, file: ctx.sessionManager.getSessionFile(), worker: process.env.PI_THREAD_WORKER === "1",
+				workerToken: process.env.PI_THREAD_WORKER_TOKEN });
+		} catch (error) {
+			this.#close();
+			throw error;
+		}
 		this.#timer = setInterval(() => {
 			if (this.#pumping || this.#stopped) return;
 			this.#pumping = true;
@@ -94,7 +106,10 @@ export class NativeInbox {
 		const session = ctx.sessionManager.getSessionId();
 		if (this.#active) {
 			if (this.#active.outcome) this.#saveOutcome(session);
-			else if (!this.#active.started && Date.now() - this.#active.claimed > 120_000 && ctx.isIdle() && !ctx.hasPendingMessages()) this.finish(true, ctx);
+			else if (!this.#active.started && Date.now() - this.#active.claimed > 120_000 && ctx.isIdle() && !ctx.hasPendingMessages()) {
+				this.#active.outcome = { status: "failed", reply: "The receiving Pi could not start this request." };
+				this.#saveOutcome(session);
+			}
 			return;
 		}
 		const previous = store.running(session);
@@ -131,20 +146,19 @@ export class NativeInbox {
 	finish(aborted: boolean, ctx: ExtensionContext) {
 		this.#lastActivity = Date.now();
 		const active = this.#active;
-		if (!active || active.outcome || (!active.started && !aborted)) return;
+		if (!active?.started || active.outcome) return;
 		let began = false;
 		let reply: string | undefined;
-		let failed = false;
 		for (const entry of ctx.sessionManager.getBranch()) {
 			if (entry.type === "custom_message" && entry.customType === TYPE && (entry.details as { id?: string })?.id === active.task.id) { began = true; continue; }
 			if (!began) continue;
 			if (entry.type === "message" && entry.message.role === "user") break;
 			if (entry.type !== "message" || entry.message.role !== "assistant") continue;
-			failed = entry.message.stopReason === "error" || entry.message.stopReason === "aborted";
-			const text = entry.message.content.flatMap(block => block.type === "text" ? [block.text] : []).join("\n").trim();
-			if (text) reply = text.slice(0, 8000);
+			// A tool-call preamble or partial/error response is not the final answer.
+			reply = entry.message.stopReason === "stop" ?
+				entry.message.content.flatMap(block => block.type === "text" ? [block.text] : []).join("\n").trim().slice(0, 8000) : undefined;
 		}
-		active.outcome = aborted ? { status: "interrupted", reply: INTERRUPTED } : !failed && reply ? { status: "completed", reply } :
+		active.outcome = aborted ? { status: "interrupted", reply: INTERRUPTED } : reply ? { status: "completed", reply } :
 			{ status: "failed", reply: "The receiving Pi did not complete this request." };
 		this.#saveOutcome(ctx.sessionManager.getSessionId());
 	}
@@ -171,25 +185,37 @@ export class NativeThreads {
 	#ctx?: ExtensionContext;
 	#shown = new Map<string, number>();
 
-	constructor(private machines: Machine[], private notify: (id: string, dest: string, result: Observed) => void) {}
+	constructor(private machines: Machine[], private notify: (id: string, dest: string, result: Observed) => void,
+		private options: { canWake?: () => boolean; waitMs?: number } = {}) {}
 
 	start(ctx: ExtensionContext) {
 		this.#session = ctx.sessionManager.getSessionId();
+		if ((ctx.mode !== "tui" && ctx.mode !== "rpc") || !ctx.sessionManager.getSessionFile()) return;
 		this.#ctx = ctx;
-		if (ctx.mode !== "tui" && ctx.mode !== "rpc") return;
-		this.#timer = setInterval(() => { try { this.#tick(); } catch { /* Retry persisted work after transient storage errors. */ } }, 800);
+		this.#timer = setInterval(() => {
+			try {
+				for (const id of mailbox().due(this.#session, Date.now())) void this.#sync(id).catch(() => {});
+				this.wake();
+			} catch { /* Retry persisted work after transient storage errors. */ }
+		}, 800);
 		this.#timer.unref();
 	}
 
-	#tick() {
-		if (this.#control.signal.aborted) return;
-		const store = mailbox();
-		for (const id of store.due(this.#session, Date.now())) void this.#sync(id).catch(() => {});
+	wake() {
 		const ctx = this.#ctx;
-		if (!ctx?.isIdle() || ctx.hasPendingMessages()) return;
+		if (this.#control.signal.aborted || !ctx?.isIdle() || ctx.hasPendingMessages() || this.options.canWake?.() === false) return;
+		const store = mailbox();
 		const pending = store.notifications(this.#session);
 		if (!pending.length) return;
-		const seen = new Set(ctx.sessionManager.getEntries().flatMap(e => e.type === "custom_message" && e.customType === REPLY_TYPE ? [(e.details as { id?: string })?.id] : []));
+		// Only acknowledge after Pi has persisted the result. If a tool wait was
+		// aborted before its result reached the transcript, keep the completion wake.
+		const seen = new Set<unknown>();
+		for (const entry of ctx.sessionManager.getBranch()) {
+			if (entry.type === "custom_message" && entry.customType === REPLY_TYPE) seen.add((entry.details as { id?: string })?.id);
+			if (entry.type === "message" && entry.message.role === "toolResult" && entry.message.toolName === "remote_thread" && !entry.message.isError) {
+				seen.add((entry.message.details as { terminalReceipt?: string })?.terminalReceipt);
+			}
+		}
 		for (const result of pending) {
 			const id = String(result.id);
 			if (seen.has(id)) {
@@ -198,6 +224,7 @@ export class NativeThreads {
 			} else if (Date.now() - (this.#shown.get(id) ?? 0) > 30_000) {
 				this.notify(id, `${result.machine}/${result.title ?? "Pi thread"}`, result as unknown as Observed);
 				this.#shown.set(id, Date.now());
+				break; // Let Pi accept and settle this wake before starting another turn.
 			}
 		}
 	}
@@ -237,23 +264,24 @@ export class NativeThreads {
 		return { machine: machineName, ...this.#remember(machine, thread) };
 	}
 
-	async send(target: string, message: string, cwd: string, file: string | undefined, wait: boolean, signal?: AbortSignal) {
+	async send(target: string, message: string, cwd: string, file: string | undefined, signal?: AbortSignal) {
 		const attachment = file ? await attachmentBytes(cwd, file) : undefined;
 		signal?.throwIfAborted();
 		const id = randomUUID();
 		mailbox().enqueue(this.#session, id, target, message, attachment?.bytes.toString("base64"), attachment?.name);
-		if (wait) return this.observe(id, true, signal);
-		void this.#sync(id).catch(() => {});
-		return this.#summary(id);
+		return this.observe(id, signal);
 	}
 
-	#summary(id: string) {
+	#summary(id: string, waitTimedOut = false) {
 		const result = mailbox().outgoing(this.#session, id) as unknown as Outgoing | undefined;
 		if (!result) throw new Error("Unknown receipt in this Pi session. Do not assume that a prior send failed.");
 		const { status, machine, title, reply } = result;
-		return { receipt: id, machine, title, status, ...(reply && { reply }),
-			...(status === "pending" && { note: "Saved on this machine. Delivery will retry while this sender session is open or after it resumes." }),
-			...((status === "queued" || status === "working") && { note: "Saved on the receiving machine. Check the same receipt for the result; do not resend." }),
+		const terminal = isFinal(status);
+		return { receipt: id, machine, title, status, waitTimedOut: !terminal && waitTimedOut, ...(reply && { reply }),
+			...(status === "pending" && { note: "Saved on this machine; delivery has not been confirmed." }),
+			...(!terminal && { next: this.#ctx ?
+				"Keep the receipt. Do other independent work or end this turn; the terminal result will start a new turn in this saved Pi session when it is open and idle. Do not poll or resend." :
+				"No automatic wake in this Pi mode. Resume the same saved session in interactive or RPC mode, or check this receipt. Do not resend." }),
 		};
 	}
 
@@ -270,7 +298,7 @@ export class NativeThreads {
 		const store = mailbox();
 		const source = this.#session;
 		const send = store.outgoing(source, id) as unknown as Outgoing | undefined;
-		if (!send || isFinal(send.status)) return;
+		if (!send || isFinal(send.status) || send.nextAt > Date.now()) return;
 		const machine = this.machines.find(m => m.name === send.machine);
 		try {
 			if (!machine) throw new Error("The configured route is unavailable.");
@@ -287,17 +315,30 @@ export class NativeThreads {
 		}
 	}
 
-	async observe(id: string, wait: boolean, signal?: AbortSignal) {
-		const deadline = Date.now() + (wait ? 38_000 : 0);
-		let result = this.#summary(id);
-		while (wait && !isFinal(result.status) && Date.now() < deadline) {
-			signal?.throwIfAborted();
-			if (mailbox().due(this.#session, Date.now()).includes(id)) await this.#sync(id);
-			result = this.#summary(id);
-			if (result.status === "pending" || isFinal(result.status)) break;
-			await pause(1200, undefined, { signal });
-		}
-		return result;
+	async cancel(id: string, signal?: AbortSignal) {
+		const store = mailbox();
+		const send = store.outgoing(this.#session, id) as unknown as Outgoing | undefined;
+		if (!send) throw new Error("Unknown native receipt in this Pi session.");
+		if (isFinal(send.status)) return this.#summary(id);
+		if (send.status === "pending") throw new Error("The receiver has not confirmed this receipt yet; check receipts before cancelling.");
+		if (send.status === "working") throw new Error("The receiver already claimed this request; only queued work can be cancelled.");
+		const machine = this.machines.find(m => m.name === send.machine);
+		if (!machine) throw new Error("The configured route is unavailable.");
+		const result = await callBridge<Observed | null>(machine, { op: "mail_cancel", id, session: send.session, source: this.#session }, signal);
+		if (!result) throw new Error("The receiving mailbox did not confirm the receipt.");
+		store.updateOutgoing(this.#session, id, send.status, result.status, result.reply ?? null, Date.now());
+		if (result.status === "working") throw new Error("The receiver already claimed this request; only queued work can be cancelled.");
+		return this.#summary(id);
+	}
+
+	async observe(id: string, signal?: AbortSignal) {
+		const initial = this.#summary(id);
+		const stop = signal ? AbortSignal.any([signal, this.#control.signal]) : this.#control.signal;
+		const { waitTimedOut } = await waitForReceipt(initial, async () => {
+			await this.#sync(id);
+			return this.#summary(id);
+		}, result => isFinal(result.status), this.options.waitMs ?? REPLY_WAIT_MS, stop);
+		return this.#summary(id, waitTimedOut);
 	}
 
 	close() {
