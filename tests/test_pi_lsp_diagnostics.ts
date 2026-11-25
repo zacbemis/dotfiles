@@ -8,12 +8,17 @@ import { createJsonRpcConnection } from "../.pi/agent/extensions/lsp-diagnostics
 import {
 	createLspDiagnosticsManager,
 	LSP_DIAGNOSTICS_DISABLE_ENV,
+	resolveLineColumn0,
 } from "../.pi/agent/extensions/lsp-diagnostics/manager.ts";
 import {
 	DEFAULT_LSP_SERVERS,
 	type LspServerSpec,
 	resolveServerBinary,
 } from "../.pi/agent/extensions/lsp-diagnostics/servers.ts";
+import {
+	createLspSettleGuard,
+	LSP_SETTLE_GUARD_DISABLE_ENV,
+} from "../.pi/agent/extensions/lsp-diagnostics/settle-guard.ts";
 
 function frameJsonRpc(payload: Record<string, unknown>): Buffer {
 	const body = Buffer.from(JSON.stringify({ jsonrpc: "2.0", ...payload }), "utf-8");
@@ -252,6 +257,127 @@ test("real pyright-langserver catches type mismatch and clears after fix (when i
 			await writeFile(join(dir, "sample.py"), "def add(a: int, b: int) -> int:\n    return a + b\n\nx: int = add(1, 2)\n", "utf-8");
 			const clean = await manager.checkFiles(dir, ["sample.py"]);
 			assert.equal(clean, undefined);
+		} finally {
+			await manager.shutdownAll();
+		}
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("resolveLineColumn0 and LSP settle guard behave deterministically and nudge at most once per turn", async () => {
+	assert.equal(resolveLineColumn0("  const result = computeSum(a, b);", undefined, "computeSum"), 17);
+	assert.equal(resolveLineColumn0("  const result = computeSum(a, b);", 9, "computeSum"), 8);
+	assert.equal(resolveLineColumn0("    return x;", undefined, undefined), 4);
+
+	const guard = createLspSettleGuard();
+	const cwd = "/tmp/workspace";
+	const badAbs = "/tmp/workspace/src/a.ts";
+
+	guard.recordCheckResult(cwd, ["src/a.ts"], [], new Map([[badAbs, ["src/a.ts:1:1 error bad"]]]));
+	assert.equal(guard.unresolvedCount, 1);
+
+	// Recheck confirms error still exists -> returns one nudge.
+	const nudge1 = await guard.buildSettleNudge(cwd, async () => ({
+		block: "[LSP Diagnostics]\nsrc/a.ts:1:1 error bad",
+		errorsByFile: new Map([[badAbs, ["src/a.ts:1:1 error bad"]]]),
+	}));
+	assert.match(nudge1 ?? "", /resolve the remaining LSP error/);
+	assert.match(nudge1 ?? "", /src\/a\.ts:1:1 error bad/);
+
+	// Second settle in same turn does not loop.
+	const nudge2 = await guard.buildSettleNudge(cwd, async () => {
+		throw new Error("should not recheck after nudging once in same turn");
+	});
+	assert.equal(nudge2, undefined);
+
+	// New turn resets nudge cap; if recheck finds errors resolved, returns undefined.
+	guard.resetTurn();
+	guard.recordCheckResult(cwd, ["src/a.ts"], [], new Map([[badAbs, ["src/a.ts:1:1 error bad"]]]));
+	const resolved = await guard.buildSettleNudge(cwd, async () => ({
+		errorsByFile: new Map(),
+	}));
+	assert.equal(resolved, undefined);
+	assert.equal(guard.unresolvedCount, 0);
+
+	// Opt-out env disables settle guard.
+	guard.recordCheckResult(cwd, ["src/a.ts"], [], new Map([[badAbs, ["src/a.ts:1:1 error bad"]]]));
+	process.env[LSP_SETTLE_GUARD_DISABLE_ENV] = "0";
+	try {
+		assert.equal(
+			await guard.buildSettleNudge(cwd, async () => {
+				throw new Error("should not run when disabled");
+			}),
+			undefined,
+		);
+	} finally {
+		delete process.env[LSP_SETTLE_GUARD_DISABLE_ENV];
+	}
+});
+
+test("real typescript-language-server supports definition, references, hover, and symbols (when installed)", async (t) => {
+	const tsSpec = DEFAULT_LSP_SERVERS.find((s) => s.id === "typescript")!;
+	const dir = await mkdtemp(join(tmpdir(), "pi-lsp-nav-ts-"));
+	try {
+		const bin = await resolveServerBinary(tsSpec.binary, dir, dir);
+		if (!bin) {
+			t.skip("typescript-language-server not installed");
+			return;
+		}
+
+		await writeFile(
+			join(dir, "tsconfig.json"),
+			JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", strict: true, noEmit: true } }),
+			"utf-8",
+		);
+		await writeFile(
+			join(dir, "lib.ts"),
+			"export function computeTotal(price: number, qty: number): number {\n  return price * qty;\n}\n",
+			"utf-8",
+		);
+		await writeFile(
+			join(dir, "app.ts"),
+			'import { computeTotal } from "./lib.js";\nexport const total = computeTotal(10, 3);\n',
+			"utf-8",
+		);
+
+		const manager = createLspDiagnosticsManager({
+			servers: [tsSpec],
+			coldWaitMs: 6_000,
+			warmWaitMs: 3_000,
+			navTimeoutMs: 6_000,
+		});
+		try {
+			const defOut = await manager.queryNavigation(dir, {
+				action: "definition",
+				path: "app.ts",
+				line: 2,
+				symbol: "computeTotal",
+			});
+			assert.match(defOut, /lib\.ts:1:\d+: export function computeTotal/);
+
+			const hoverOut = await manager.queryNavigation(dir, {
+				action: "hover",
+				path: "app.ts",
+				line: 2,
+				symbol: "computeTotal",
+			});
+			assert.match(hoverOut, /computeTotal\(price: number, qty: number\): number/);
+
+			const refsOut = await manager.queryNavigation(dir, {
+				action: "references",
+				path: "lib.ts",
+				line: 1,
+				symbol: "computeTotal",
+			});
+			assert.match(refsOut, /lib\.ts:1:/);
+			assert.match(refsOut, /app\.ts:/);
+
+			const symOut = await manager.queryNavigation(dir, {
+				action: "symbols",
+				path: "lib.ts",
+			});
+			assert.match(symOut, /L1-3 function computeTotal/);
 		} finally {
 			await manager.shutdownAll();
 		}

@@ -93,6 +93,7 @@
 !.pi/agent/extensions/lsp-diagnostics/jsonrpc.ts
 !.pi/agent/extensions/lsp-diagnostics/client.ts
 !.pi/agent/extensions/lsp-diagnostics/manager.ts
+!.pi/agent/extensions/lsp-diagnostics/settle-guard.ts
 !.pi/agent/extensions/remote-thread/
 .pi/agent/extensions/remote-thread/*
 !.pi/agent/extensions/remote-thread/index.ts

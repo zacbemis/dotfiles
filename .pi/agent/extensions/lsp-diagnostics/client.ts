@@ -14,14 +14,51 @@ export interface LspDiagnosticItem {
 	readonly message: string;
 }
 
+export interface LspLocation {
+	readonly absPath: string;
+	readonly line: number; // 1-indexed
+	readonly column: number; // 1-indexed
+}
+
+export interface LspSymbolItem {
+	readonly name: string;
+	readonly kind: string;
+	readonly line: number; // 1-indexed
+	readonly endLine: number; // 1-indexed
+	readonly depth: number;
+	readonly container?: string;
+}
+
+interface RawLspRange {
+	readonly start?: { readonly line?: number; readonly character?: number };
+	readonly end?: { readonly line?: number; readonly character?: number };
+}
+
 interface RawLspDiagnostic {
-	readonly range?: {
-		readonly start?: { readonly line?: number; readonly character?: number };
-	};
+	readonly range?: RawLspRange;
 	readonly severity?: number;
 	readonly code?: string | number | { readonly value?: string | number };
 	readonly source?: string;
 	readonly message?: string;
+}
+
+interface RawLocation {
+	readonly uri?: string;
+	readonly range?: RawLspRange;
+	readonly targetUri?: string;
+	readonly targetSelectionRange?: RawLspRange;
+	readonly targetRange?: RawLspRange;
+}
+
+interface RawDocumentSymbol {
+	readonly name?: string;
+	readonly kind?: number;
+	readonly range?: RawLspRange;
+	readonly selectionRange?: RawLspRange;
+	readonly children?: readonly RawDocumentSymbol[];
+	// SymbolInformation shape
+	readonly location?: RawLocation;
+	readonly containerName?: string;
 }
 
 interface PublishDiagnosticsParams {
@@ -38,14 +75,49 @@ interface DiagnosticWaiter {
 	readonly resolve: (items: LspDiagnosticItem[]) => void;
 }
 
+interface OpenDocumentState {
+	version: number;
+	text: string;
+}
+
 type ClientState = "starting" | "ready" | "closed";
 
 const DEFAULT_INIT_TIMEOUT_MS = 6_000;
 const DEFAULT_WARM_WAIT_MS = 2_000;
 const DEFAULT_COLD_WAIT_MS = 4_000;
+const DEFAULT_NAV_TIMEOUT_MS = 5_000;
 const VERSIONLESS_NONEMPTY_SETTLE_MS = 120;
 const VERSIONLESS_EMPTY_SETTLE_MS = 300;
 const SHUTDOWN_TIMEOUT_MS = 500;
+
+const SYMBOL_KIND_NAMES: Record<number, string> = {
+	1: "file",
+	2: "module",
+	3: "namespace",
+	4: "package",
+	5: "class",
+	6: "method",
+	7: "property",
+	8: "field",
+	9: "constructor",
+	10: "enum",
+	11: "interface",
+	12: "function",
+	13: "variable",
+	14: "constant",
+	15: "string",
+	16: "number",
+	17: "boolean",
+	18: "array",
+	19: "object",
+	20: "key",
+	21: "null",
+	22: "enumMember",
+	23: "struct",
+	24: "event",
+	25: "operator",
+	26: "typeParam",
+};
 
 function normalizeUriToPath(uri: string): string | undefined {
 	try {
@@ -89,6 +161,93 @@ function parseErrorDiagnostics(rawList: readonly RawLspDiagnostic[] | undefined)
 	return items;
 }
 
+function parseLocations(raw: unknown): LspLocation[] {
+	if (!raw) return [];
+	const list: RawLocation[] = Array.isArray(raw) ? (raw as RawLocation[]) : [raw as RawLocation];
+	const results: LspLocation[] = [];
+	const seen = new Set<string>();
+
+	for (const item of list) {
+		if (!item || typeof item !== "object") continue;
+		const uri = item.targetUri ?? item.uri;
+		const range = item.targetSelectionRange ?? item.targetRange ?? item.range;
+		if (!uri || !range?.start) continue;
+		const absPath = normalizeUriToPath(uri);
+		if (!absPath) continue;
+		const line = (range.start.line ?? 0) + 1;
+		const column = (range.start.character ?? 0) + 1;
+		const key = `${absPath}:${line}:${column}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		results.push({ absPath, line, column });
+	}
+
+	results.sort((a, b) => a.absPath.localeCompare(b.absPath) || a.line - b.line || a.column - b.column);
+	return results;
+}
+
+function parseHoverText(raw: unknown): string | undefined {
+	if (!raw || typeof raw !== "object") return undefined;
+	const contents = (raw as { contents?: unknown }).contents;
+	if (!contents) return undefined;
+
+	const extractPart = (part: unknown): string => {
+		if (typeof part === "string") return part;
+		if (part && typeof part === "object") {
+			const obj = part as { value?: unknown; language?: unknown };
+			if (typeof obj.value === "string") return obj.value;
+		}
+		return "";
+	};
+
+	const rawText = Array.isArray(contents) ? contents.map(extractPart).filter(Boolean).join("\n") : extractPart(contents);
+	const cleaned = rawText
+		.replace(/\r\n?/g, "\n")
+		.replace(/^```[\w-]*\n/gm, "")
+		.replace(/^```\s*$/gm, "")
+		.replace(/\n{3,}/g, "\n\n")
+		.trim();
+	return cleaned || undefined;
+}
+
+function parseDocumentSymbols(raw: unknown): LspSymbolItem[] {
+	if (!Array.isArray(raw)) return [];
+	const items: LspSymbolItem[] = [];
+
+	const walk = (nodes: readonly RawDocumentSymbol[], depth: number): void => {
+		for (const node of nodes) {
+			if (!node || typeof node !== "object" || typeof node.name !== "string") continue;
+			const kind = SYMBOL_KIND_NAMES[node.kind ?? 0] ?? "symbol";
+
+			if (node.location?.range?.start) {
+				const line = (node.location.range.start.line ?? 0) + 1;
+				const endLine = (node.location.range.end?.line ?? line - 1) + 1;
+				items.push({
+					name: node.name,
+					kind,
+					line,
+					endLine,
+					depth,
+					container: node.containerName,
+				});
+				continue;
+			}
+
+			const range = node.range ?? node.selectionRange;
+			if (!range?.start) continue;
+			const line = (range.start.line ?? 0) + 1;
+			const endLine = (range.end?.line ?? line - 1) + 1;
+			items.push({ name: node.name, kind, line, endLine, depth });
+			if (Array.isArray(node.children) && node.children.length > 0) {
+				walk(node.children, depth + 1);
+			}
+		}
+	};
+
+	walk(raw as readonly RawDocumentSymbol[], 0);
+	return items;
+}
+
 export class LspClient {
 	readonly spec: LspServerSpec;
 	readonly rootDir: string;
@@ -98,7 +257,7 @@ export class LspClient {
 	private child: ChildProcess | undefined;
 	private rpc: ReturnType<typeof createJsonRpcConnection> | undefined;
 	private startupPromise: Promise<boolean> | undefined;
-	private readonly openVersions = new Map<string, number>();
+	private readonly openDocs = new Map<string, OpenDocumentState>();
 	private readonly waiters = new Map<string, DiagnosticWaiter>();
 	private lastUsedAtMs = Date.now();
 	private hasCompletedFirstDiagnose = false;
@@ -106,6 +265,7 @@ export class LspClient {
 	private readonly initTimeoutMs: number;
 	private readonly warmWaitMs: number;
 	private readonly coldWaitMs: number;
+	private readonly navTimeoutMs: number;
 
 	constructor(options: {
 		readonly spec: LspServerSpec;
@@ -114,6 +274,7 @@ export class LspClient {
 		readonly initTimeoutMs?: number;
 		readonly warmWaitMs?: number;
 		readonly coldWaitMs?: number;
+		readonly navTimeoutMs?: number;
 	}) {
 		this.spec = options.spec;
 		this.rootDir = resolve(options.rootDir);
@@ -121,6 +282,7 @@ export class LspClient {
 		this.initTimeoutMs = options.initTimeoutMs ?? DEFAULT_INIT_TIMEOUT_MS;
 		this.warmWaitMs = options.warmWaitMs ?? DEFAULT_WARM_WAIT_MS;
 		this.coldWaitMs = options.coldWaitMs ?? DEFAULT_COLD_WAIT_MS;
+		this.navTimeoutMs = options.navTimeoutMs ?? DEFAULT_NAV_TIMEOUT_MS;
 	}
 
 	get isClosed(): boolean {
@@ -188,7 +350,7 @@ export class LspClient {
 			this.finishWaiter(absPath, waiter.latest ?? []);
 		}
 		this.waiters.clear();
-		this.openVersions.clear();
+		this.openDocs.clear();
 		this.rpc?.dispose();
 		this.rpc = undefined;
 	}
@@ -235,7 +397,7 @@ export class LspClient {
 					"initialize",
 					{
 						processId: process.pid,
-						clientInfo: { name: "pi-lsp-diagnostics", version: "1.0.0" },
+						clientInfo: { name: "pi-lsp-diagnostics", version: "1.1.0" },
 						rootPath: this.rootDir,
 						rootUri,
 						workspaceFolders: [{ uri: rootUri, name: basename(this.rootDir) }],
@@ -253,6 +415,10 @@ export class LspClient {
 								publishDiagnostics: {
 									versionSupport: true,
 								},
+								definition: { linkSupport: true },
+								references: {},
+								hover: { contentFormat: ["plaintext", "markdown"] },
+								documentSymbol: { hierarchicalDocumentSymbolSupport: true },
 							},
 						},
 					},
@@ -273,6 +439,59 @@ export class LspClient {
 		return this.startupPromise;
 	}
 
+	private async syncDocument(
+		absPath: string,
+		forceRepublish: boolean,
+	): Promise<{ uri: string; text: string; version: number } | undefined> {
+		const normalized = resolve(absPath);
+		const ready = await this.ensureReady();
+		if (!ready || !this.rpc || this.state !== "ready") return undefined;
+
+		let text: string;
+		try {
+			text = await readFile(normalized, "utf-8");
+		} catch {
+			return undefined;
+		}
+
+		const uri = pathToFileURL(normalized).href;
+		const existing = this.openDocs.get(normalized);
+
+		if (!existing) {
+			const nextVersion = 1;
+			this.openDocs.set(normalized, { version: nextVersion, text });
+			const ext = extname(normalized).toLowerCase();
+			this.rpc.notify("textDocument/didOpen", {
+				textDocument: {
+					uri,
+					languageId: this.spec.languageIdForExtension(ext),
+					version: nextVersion,
+					text,
+				},
+			});
+			if (forceRepublish) {
+				this.rpc.notify("textDocument/didSave", { textDocument: { uri }, text });
+			}
+			return { uri, text, version: nextVersion };
+		}
+
+		if (existing.text === text && !forceRepublish) {
+			return { uri, text, version: existing.version };
+		}
+
+		const nextVersion = existing.version + 1;
+		existing.version = nextVersion;
+		existing.text = text;
+		this.rpc.notify("textDocument/didChange", {
+			textDocument: { uri, version: nextVersion },
+			contentChanges: [{ text }],
+		});
+		if (forceRepublish) {
+			this.rpc.notify("textDocument/didSave", { textDocument: { uri }, text });
+		}
+		return { uri, text, version: nextVersion };
+	}
+
 	async diagnoseFile(absPath: string): Promise<LspDiagnosticItem[]> {
 		const normalized = resolve(absPath);
 		this.lastUsedAtMs = Date.now();
@@ -288,9 +507,8 @@ export class LspClient {
 		}
 
 		const uri = pathToFileURL(normalized).href;
-		const previousVersion = this.openVersions.get(normalized);
-		const nextVersion = (previousVersion ?? 0) + 1;
-		this.openVersions.set(normalized, nextVersion);
+		const existing = this.openDocs.get(normalized);
+		const nextVersion = (existing?.version ?? 0) + 1;
 
 		// Cancel any superseded waiter for the same file before registering a new one.
 		if (this.waiters.has(normalized)) {
@@ -314,7 +532,8 @@ export class LspClient {
 			});
 		});
 
-		if (previousVersion === undefined) {
+		this.openDocs.set(normalized, { version: nextVersion, text });
+		if (!existing) {
 			const ext = extname(normalized).toLowerCase();
 			this.rpc.notify("textDocument/didOpen", {
 				textDocument: {
@@ -341,10 +560,94 @@ export class LspClient {
 		return items;
 	}
 
+	async definition(absPath: string, line0: number, char0: number): Promise<LspLocation[]> {
+		this.lastUsedAtMs = Date.now();
+		if (!this.hasCompletedFirstDiagnose) {
+			await this.diagnoseFile(absPath);
+		}
+		const synced = await this.syncDocument(absPath, false);
+		if (!synced || !this.rpc || this.state !== "ready") return [];
+		try {
+			const raw = await this.rpc.request(
+				"textDocument/definition",
+				{ textDocument: { uri: synced.uri }, position: { line: line0, character: char0 } },
+				this.navTimeoutMs,
+			);
+			this.lastUsedAtMs = Date.now();
+			return parseLocations(raw);
+		} catch {
+			return [];
+		}
+	}
+
+	async references(absPath: string, line0: number, char0: number, includeDeclaration = true): Promise<LspLocation[]> {
+		this.lastUsedAtMs = Date.now();
+		if (!this.hasCompletedFirstDiagnose) {
+			await this.diagnoseFile(absPath);
+		}
+		const synced = await this.syncDocument(absPath, false);
+		if (!synced || !this.rpc || this.state !== "ready") return [];
+		try {
+			const raw = await this.rpc.request(
+				"textDocument/references",
+				{
+					textDocument: { uri: synced.uri },
+					position: { line: line0, character: char0 },
+					context: { includeDeclaration },
+				},
+				this.navTimeoutMs,
+			);
+			this.lastUsedAtMs = Date.now();
+			return parseLocations(raw);
+		} catch {
+			return [];
+		}
+	}
+
+	async hover(absPath: string, line0: number, char0: number): Promise<string | undefined> {
+		this.lastUsedAtMs = Date.now();
+		if (!this.hasCompletedFirstDiagnose) {
+			await this.diagnoseFile(absPath);
+		}
+		const synced = await this.syncDocument(absPath, false);
+		if (!synced || !this.rpc || this.state !== "ready") return undefined;
+		try {
+			const raw = await this.rpc.request(
+				"textDocument/hover",
+				{ textDocument: { uri: synced.uri }, position: { line: line0, character: char0 } },
+				this.navTimeoutMs,
+			);
+			this.lastUsedAtMs = Date.now();
+			return parseHoverText(raw);
+		} catch {
+			return undefined;
+		}
+	}
+
+	async documentSymbols(absPath: string): Promise<LspSymbolItem[]> {
+		this.lastUsedAtMs = Date.now();
+		if (!this.hasCompletedFirstDiagnose) {
+			await this.diagnoseFile(absPath);
+		}
+		const synced = await this.syncDocument(absPath, false);
+		if (!synced || !this.rpc || this.state !== "ready") return [];
+		try {
+			const raw = await this.rpc.request(
+				"textDocument/documentSymbol",
+				{ textDocument: { uri: synced.uri } },
+				this.navTimeoutMs,
+			);
+			this.lastUsedAtMs = Date.now();
+			return parseDocumentSymbols(raw);
+		} catch {
+			return [];
+		}
+	}
+
 	closeFile(absPath: string): void {
 		const normalized = resolve(absPath);
-		if (!this.openVersions.has(normalized)) return;
-		this.openVersions.delete(normalized);
+		if (!this.openDocs.has(normalized)) return;
+		this.openDocs.delete(normalized);
 		this.finishWaiter(normalized, []);
 		if (this.rpc && this.state === "ready") {
 			this.rpc.notify("textDocument/didClose", {

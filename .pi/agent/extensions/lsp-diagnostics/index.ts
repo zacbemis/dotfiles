@@ -1,5 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createLspDiagnosticsManager } from "./manager.ts";
+import { Type } from "typebox";
+import { createLspDiagnosticsManager, type LspNavigationAction } from "./manager.ts";
+import { createLspSettleGuard, LSP_SETTLE_CONTINUATION_TYPE } from "./settle-guard.ts";
 
 type ContentBlock = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
 
@@ -8,6 +10,19 @@ interface PatchFileDetail {
 	readonly path?: string;
 	readonly movedFrom?: string;
 }
+
+const lspSchema = Type.Object({
+	action: Type.Union([
+		Type.Literal("definition"),
+		Type.Literal("references"),
+		Type.Literal("hover"),
+		Type.Literal("symbols"),
+	]),
+	path: Type.String({ description: "File path relative to cwd or absolute" }),
+	line: Type.Optional(Type.Number({ description: "1-indexed line (for definition, references, hover)" })),
+	column: Type.Optional(Type.Number({ description: "1-indexed column (optional if symbol is provided)" })),
+	symbol: Type.Optional(Type.String({ description: "Identifier on line to resolve column automatically" })),
+});
 
 function appendToLastTextBlock(content: readonly ContentBlock[], suffix: string): ContentBlock[] {
 	for (let i = content.length - 1; i >= 0; i--) {
@@ -56,6 +71,43 @@ function extractEditedPaths(
 
 export default function (pi: ExtensionAPI): void {
 	const manager = createLspDiagnosticsManager();
+	const settleGuard = createLspSettleGuard();
+
+	pi.registerTool({
+		name: "lsp",
+		label: "lsp",
+		description: "Semantic code navigation via warm project LSPs: definition, references, hover, or document symbols.",
+		promptSnippet: "Look up symbol definition, references, hover type, or file outline via project LSP",
+		promptGuidelines: [
+			"Use lsp for exact definitions, references, hover types, or symbol outlines in typed repos instead of broad grep + full-file reads.",
+		],
+		parameters: lspSchema,
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const text = await manager.queryNavigation(ctx.cwd, {
+				action: params.action as LspNavigationAction,
+				path: params.path,
+				line: params.line,
+				column: params.column,
+				symbol: params.symbol,
+			});
+			return {
+				content: [{ type: "text", text }],
+				details: { action: params.action, path: params.path },
+			};
+		},
+	});
+
+	pi.on("session_start", () => {
+		settleGuard.resetTurn();
+	});
+
+	pi.on("before_agent_start", () => {
+		settleGuard.resetTurn();
+	});
+
+	pi.on("session_compact", () => {
+		settleGuard.resetTurn();
+	});
 
 	pi.on("tool_result", async (event, ctx) => {
 		if (event.isError) return;
@@ -66,12 +118,36 @@ export default function (pi: ExtensionAPI): void {
 		const { modified, deleted } = extractEditedPaths(event.toolName, event.input, event.details);
 		if (modified.length === 0 && deleted.length === 0) return;
 
-		const diagnosticBlock = await manager.checkFiles(ctx.cwd, modified, deleted);
-		if (!diagnosticBlock) return;
+		const result = await manager.checkFilesDetailed(ctx.cwd, modified, deleted);
+		settleGuard.recordCheckResult(ctx.cwd, modified, deleted, result.errorsByFile);
+
+		if (!result.block) return;
 
 		return {
-			content: appendToLastTextBlock(event.content as ContentBlock[], diagnosticBlock),
+			content: appendToLastTextBlock(event.content as ContentBlock[], result.block),
 			...(event.structuredContent !== undefined ? { structuredContent: event.structuredContent } : {}),
+		};
+	});
+
+	pi.on("agent_before_settle", async (event, ctx) => {
+		if (event.outcome !== "completed" || event.continue) return;
+		const nudge = await settleGuard.buildSettleNudge(ctx.cwd, (cwd, paths) =>
+			manager.checkFilesDetailed(cwd, paths),
+		);
+		if (!nudge) return;
+
+		return {
+			entries: [
+				...event.entries,
+				{
+					type: "custom_message",
+					customType: LSP_SETTLE_CONTINUATION_TYPE,
+					content: nudge,
+					display: false,
+					details: { unresolvedCount: settleGuard.unresolvedCount },
+				},
+			],
+			continue: true,
 		};
 	});
 

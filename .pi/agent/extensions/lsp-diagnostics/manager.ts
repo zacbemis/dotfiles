@@ -1,5 +1,6 @@
+import { readFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
-import { LspClient, type LspDiagnosticItem } from "./client.ts";
+import { LspClient, type LspDiagnosticItem, type LspLocation, type LspSymbolItem } from "./client.ts";
 import {
 	DEFAULT_LSP_SERVERS,
 	findGitRoot,
@@ -19,6 +20,26 @@ const DEFAULT_MAX_CHARS = 1_600;
 const DEFAULT_IDLE_TIMEOUT_MS = 5 * 60_000;
 const REAPER_INTERVAL_MS = 60_000;
 
+const MAX_NAV_LOCATIONS = 30;
+const MAX_NAV_SYMBOLS = 60;
+const MAX_NAV_CHARS = 2_400;
+const MAX_SNIPPET_CHARS = 120;
+
+export type LspNavigationAction = "definition" | "references" | "hover" | "symbols";
+
+export interface LspNavigationRequest {
+	readonly action: LspNavigationAction;
+	readonly path: string;
+	readonly line?: number; // 1-indexed
+	readonly column?: number; // 1-indexed
+	readonly symbol?: string;
+}
+
+export interface LspCheckResult {
+	readonly block?: string;
+	readonly errorsByFile: Map<string, string[]>;
+}
+
 export interface LspManagerOptions {
 	readonly servers?: readonly LspServerSpec[];
 	readonly extraBinDirs?: readonly string[];
@@ -30,11 +51,94 @@ export interface LspManagerOptions {
 	readonly initTimeoutMs?: number;
 	readonly warmWaitMs?: number;
 	readonly coldWaitMs?: number;
+	readonly navTimeoutMs?: number;
 }
 
 function formatDiagnosticLine(displayPath: string, item: LspDiagnosticItem): string {
 	const codeTag = item.code ? ` [${item.source ? `${item.source} ` : ""}${item.code}]` : "";
 	return `${displayPath}:${item.line}:${item.column} error${codeTag} ${item.message}`;
+}
+
+function formatDisplayPath(workspaceCwd: string, absPath: string): string {
+	const rel = relative(workspaceCwd, absPath);
+	return rel && !rel.startsWith("..") ? rel : absPath;
+}
+
+function escapeRegex(text: string): string {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Resolve 0-indexed column on a 1-indexed line, honoring explicit column, symbol lookup,
+ * or first non-whitespace token when neither is given.
+ */
+export function resolveLineColumn0(lineText: string, column1?: number, symbol?: string): number {
+	if (typeof column1 === "number" && Number.isFinite(column1) && column1 >= 1) {
+		return Math.min(Math.max(0, Math.floor(column1) - 1), Math.max(0, lineText.length));
+	}
+	if (symbol?.trim()) {
+		const needle = symbol.trim();
+		const wordRe = new RegExp(`(?<![A-Za-z0-9_$])${escapeRegex(needle)}(?![A-Za-z0-9_$])`);
+		const wordMatch = wordRe.exec(lineText);
+		if (wordMatch) return wordMatch.index;
+		const plainIdx = lineText.indexOf(needle);
+		if (plainIdx !== -1) return plainIdx;
+	}
+	const nonWs = lineText.search(/\S/);
+	return nonWs === -1 ? 0 : nonWs;
+}
+
+async function formatLocationLines(
+	workspaceCwd: string,
+	locations: readonly LspLocation[],
+): Promise<string[]> {
+	const fileCache = new Map<string, string[] | null>();
+	const getLineText = async (absPath: string, line1: number): Promise<string | undefined> => {
+		let lines = fileCache.get(absPath);
+		if (lines === undefined) {
+			try {
+				const raw = await readFile(absPath, "utf-8");
+				lines = raw.replace(/\r\n?/g, "\n").split("\n");
+			} catch {
+				lines = null;
+			}
+			fileCache.set(absPath, lines);
+		}
+		const line = lines?.[line1 - 1]?.trim();
+		if (!line) return undefined;
+		return line.length > MAX_SNIPPET_CHARS ? `${line.slice(0, MAX_SNIPPET_CHARS)}...` : line;
+	};
+
+	const shown = locations.slice(0, MAX_NAV_LOCATIONS);
+	const formatted: string[] = [];
+	for (const loc of shown) {
+		const display = formatDisplayPath(workspaceCwd, loc.absPath);
+		const snippet = await getLineText(loc.absPath, loc.line);
+		formatted.push(snippet ? `${display}:${loc.line}:${loc.column}: ${snippet}` : `${display}:${loc.line}:${loc.column}`);
+	}
+	if (locations.length > MAX_NAV_LOCATIONS) {
+		formatted.push(`[... ${locations.length - MAX_NAV_LOCATIONS} more locations omitted]`);
+	}
+	return formatted;
+}
+
+function formatSymbolLines(symbols: readonly LspSymbolItem[]): string[] {
+	const shown = symbols.slice(0, MAX_NAV_SYMBOLS);
+	const lines = shown.map((sym) => {
+		const indent = "  ".repeat(Math.min(sym.depth, 4));
+		const range = sym.endLine > sym.line ? `L${sym.line}-${sym.endLine}` : `L${sym.line}`;
+		const container = sym.container ? ` (${sym.container})` : "";
+		return `${indent}${range} ${sym.kind} ${sym.name}${container}`;
+	});
+	if (symbols.length > MAX_NAV_SYMBOLS) {
+		lines.push(`[... ${symbols.length - MAX_NAV_SYMBOLS} more symbols omitted]`);
+	}
+	return lines;
+}
+
+function clampNavOutput(text: string): string {
+	if (text.length <= MAX_NAV_CHARS) return text;
+	return `${text.slice(0, MAX_NAV_CHARS)}\n... [truncated]`;
 }
 
 export function createLspDiagnosticsManager(options?: LspManagerOptions) {
@@ -137,6 +241,7 @@ export function createLspDiagnosticsManager(options?: LspManagerOptions) {
 			initTimeoutMs: options?.initTimeoutMs,
 			warmWaitMs: options?.warmWaitMs,
 			coldWaitMs: options?.coldWaitMs,
+			navTimeoutMs: options?.navTimeoutMs,
 		});
 		clients.set(poolKey, client);
 		ensureReaper();
@@ -155,6 +260,64 @@ export function createLspDiagnosticsManager(options?: LspManagerOptions) {
 		}
 	};
 
+	const checkFilesDetailed = async (
+		workspaceCwd: string,
+		modifiedPaths: readonly string[],
+		deletedPaths: readonly string[] = [],
+	): Promise<LspCheckResult> => {
+		const errorsByFile = new Map<string, string[]>();
+		if (process.env[LSP_DIAGNOSTICS_DISABLE_ENV] === "0") {
+			return { errorsByFile };
+		}
+
+		if (deletedPaths.length > 0) {
+			closeDeletedPaths(workspaceCwd, deletedPaths);
+		}
+
+		const normalizedCwd = resolve(workspaceCwd);
+		const uniqueAbsPaths = [
+			...new Set(
+				modifiedPaths
+					.map((raw) => (raw.startsWith("@") ? raw.slice(1) : raw))
+					.map((p) => resolve(normalizedCwd, p))
+					.filter((abs) => isInsideDirectory(normalizedCwd, abs)),
+			),
+		].slice(0, maxFiles);
+
+		if (uniqueAbsPaths.length === 0) {
+			return { errorsByFile };
+		}
+
+		const allLines: string[] = [];
+		await Promise.all(
+			uniqueAbsPaths.map(async (absPath) => {
+				const client = await getOrCreateClient(normalizedCwd, absPath);
+				if (!client) return;
+				const items = await client.diagnoseFile(absPath);
+				if (items.length === 0) return;
+
+				const displayPath = formatDisplayPath(normalizedCwd, absPath);
+				const fileLines = items.map((item) => formatDiagnosticLine(displayPath, item));
+				errorsByFile.set(absPath, fileLines);
+				allLines.push(...fileLines);
+			}),
+		);
+
+		if (allLines.length === 0) {
+			return { errorsByFile };
+		}
+
+		allLines.sort();
+		let body = allLines.slice(0, maxLines).join("\n");
+		if (allLines.length > maxLines) {
+			body += `\n[... ${allLines.length - maxLines} more LSP error lines omitted]`;
+		}
+		if (body.length > maxChars) {
+			body = `${body.slice(0, maxChars)}... [truncated]`;
+		}
+		return { block: `[LSP Diagnostics]\n${body}`, errorsByFile };
+	};
+
 	return {
 		get activeServerCount(): number {
 			let count = 0;
@@ -164,56 +327,83 @@ export function createLspDiagnosticsManager(options?: LspManagerOptions) {
 			return count;
 		},
 
+		checkFilesDetailed,
+
 		async checkFiles(
 			workspaceCwd: string,
 			modifiedPaths: readonly string[],
 			deletedPaths: readonly string[] = [],
 		): Promise<string | undefined> {
-			if (process.env[LSP_DIAGNOSTICS_DISABLE_ENV] === "0") return undefined;
+			const { block } = await checkFilesDetailed(workspaceCwd, modifiedPaths, deletedPaths);
+			return block;
+		},
 
-			if (deletedPaths.length > 0) {
-				closeDeletedPaths(workspaceCwd, deletedPaths);
-			}
-
+		async queryNavigation(workspaceCwd: string, req: LspNavigationRequest): Promise<string> {
 			const normalizedCwd = resolve(workspaceCwd);
-			const uniqueAbsPaths = [
-				...new Set(
-					modifiedPaths
-						.map((raw) => (raw.startsWith("@") ? raw.slice(1) : raw))
-						.map((p) => resolve(normalizedCwd, p))
-						.filter((abs) => isInsideDirectory(normalizedCwd, abs)),
-				),
-			].slice(0, maxFiles);
+			const cleaned = req.path.startsWith("@") ? req.path.slice(1) : req.path;
+			const absPath = resolve(normalizedCwd, cleaned);
+			const displayPath = formatDisplayPath(normalizedCwd, absPath);
 
-			if (uniqueAbsPaths.length === 0) return undefined;
-
-			const allLines: string[] = [];
-			await Promise.all(
-				uniqueAbsPaths.map(async (absPath) => {
-					const client = await getOrCreateClient(normalizedCwd, absPath);
-					if (!client) return;
-					const items = await client.diagnoseFile(absPath);
-					if (items.length === 0) return;
-
-					const rel = relative(normalizedCwd, absPath);
-					const displayPath = rel && !rel.startsWith("..") ? rel : absPath;
-					for (const item of items) {
-						allLines.push(formatDiagnosticLine(displayPath, item));
-					}
-				}),
-			);
-
-			if (allLines.length === 0) return undefined;
-
-			allLines.sort();
-			let body = allLines.slice(0, maxLines).join("\n");
-			if (allLines.length > maxLines) {
-				body += `\n[... ${allLines.length - maxLines} more LSP error lines omitted]`;
+			if (!isInsideDirectory(normalizedCwd, absPath)) {
+				return `Path '${displayPath}' is outside the current workspace.`;
 			}
-			if (body.length > maxChars) {
-				body = `${body.slice(0, maxChars)}... [truncated]`;
+
+			const client = await getOrCreateClient(normalizedCwd, absPath);
+			if (!client) {
+				return `No LSP server available for '${displayPath}' (requires a configured project root such as tsconfig.json, pyproject.toml, Cargo.toml, or go.mod). Use grep/read instead.`;
 			}
-			return `[LSP Diagnostics]\n${body}`;
+
+			if (req.action === "symbols") {
+				const symbols = await client.documentSymbols(absPath);
+				if (symbols.length === 0) {
+					return `No symbols returned by LSP for '${displayPath}'.`;
+				}
+				return clampNavOutput(`Symbols in ${displayPath}:\n${formatSymbolLines(symbols).join("\n")}`);
+			}
+
+			if (typeof req.line !== "number" || !Number.isFinite(req.line) || req.line < 1) {
+				return `Action '${req.action}' requires a 1-indexed 'line' parameter.`;
+			}
+
+			let fileLines: string[];
+			try {
+				const raw = await readFile(absPath, "utf-8");
+				fileLines = raw.replace(/\r\n?/g, "\n").split("\n");
+			} catch {
+				return `Cannot read file '${displayPath}'.`;
+			}
+
+			const line1 = Math.floor(req.line);
+			const lineText = fileLines[line1 - 1];
+			if (lineText === undefined) {
+				return `Line ${line1} is out of range for '${displayPath}' (${fileLines.length} lines).`;
+			}
+			const line0 = line1 - 1;
+			const char0 = resolveLineColumn0(lineText, req.column, req.symbol);
+
+			if (req.action === "hover") {
+				const hover = await client.hover(absPath, line0, char0);
+				if (!hover) {
+					return `No hover info at ${displayPath}:${line1}:${char0 + 1}.`;
+				}
+				return clampNavOutput(hover);
+			}
+
+			if (req.action === "definition") {
+				const locs = await client.definition(absPath, line0, char0);
+				if (locs.length === 0) {
+					return `No definition found at ${displayPath}:${line1}:${char0 + 1}.`;
+				}
+				const lines = await formatLocationLines(normalizedCwd, locs);
+				return clampNavOutput(lines.join("\n"));
+			}
+
+			const refs = await client.references(absPath, line0, char0, true);
+			if (refs.length === 0) {
+				return `No references found at ${displayPath}:${line1}:${char0 + 1}.`;
+			}
+			const lines = await formatLocationLines(normalizedCwd, refs);
+			return clampNavOutput(`References (${refs.length}):\n${lines.join("\n")}`);
 		},
 
 		async shutdownAll(): Promise<void> {
