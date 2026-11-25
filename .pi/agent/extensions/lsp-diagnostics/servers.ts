@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access } from "node:fs/promises";
+import { access, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, dirname, extname, join, resolve } from "node:path";
 
@@ -186,4 +186,96 @@ export function matchServerSpec(
 	const ext = extname(absPath).toLowerCase();
 	if (!ext) return undefined;
 	return servers.find((spec) => spec.extensions.has(ext));
+}
+
+const SKIP_SCAN_DIRS = new Set([
+	"node_modules",
+	"dist",
+	"build",
+	"target",
+	"vendor",
+	"__pycache__",
+	".git",
+	".venv",
+	"venv",
+]);
+
+async function hasAnyMarkerInDir(dir: string, markers: readonly string[]): Promise<boolean> {
+	for (const marker of markers) {
+		if (await fileExists(join(dir, marker))) return true;
+	}
+	return false;
+}
+
+/**
+ * Checks whether cwd (walking up to gitRoot and scanning up to 2 shallow subdirectory levels
+ * for monorepos) contains a configured LSP project whose server binary is installed.
+ */
+export async function hasConfiguredLspWorkspace(
+	cwd: string,
+	servers: readonly LspServerSpec[] = DEFAULT_LSP_SERVERS,
+	extraBinDirs: readonly string[] = [],
+): Promise<boolean> {
+	const resolvedCwd = resolve(cwd);
+	const gitRoot = await findGitRoot(resolvedCwd);
+	const stopDir = gitRoot ?? resolvedCwd;
+
+	// Collect candidate directories: cwd -> stopDir upward, plus bounded shallow subdirs.
+	const candidateDirs: string[] = [];
+	const seen = new Set<string>();
+	const addDir = (dir: string) => {
+		if (!seen.has(dir)) {
+			seen.add(dir);
+			candidateDirs.push(dir);
+		}
+	};
+
+	let cursor = resolvedCwd;
+	while (true) {
+		addDir(cursor);
+		if (cursor === stopDir) break;
+		const parent = dirname(cursor);
+		if (parent === cursor) break;
+		cursor = parent;
+	}
+
+	const queue: Array<{ dir: string; depth: number }> = [{ dir: resolvedCwd, depth: 0 }];
+	const maxShallowDirs = 40;
+	let scannedShallow = 0;
+	while (queue.length > 0 && scannedShallow < maxShallowDirs) {
+		const { dir, depth } = queue.shift()!;
+		if (depth >= 2) continue;
+		let entries;
+		try {
+			entries = await readdir(dir, { withFileTypes: true });
+		} catch {
+			continue;
+		}
+		for (const entry of entries) {
+			if (!entry.isDirectory()) continue;
+			if (entry.name.startsWith(".") || SKIP_SCAN_DIRS.has(entry.name)) continue;
+			const child = join(dir, entry.name);
+			addDir(child);
+			scannedShallow++;
+			if (scannedShallow >= maxShallowDirs) break;
+			if (depth + 1 < 2) {
+				queue.push({ dir: child, depth: depth + 1 });
+			}
+		}
+	}
+
+	const binaryCache = new Map<string, boolean>();
+	for (const dir of candidateDirs) {
+		for (const spec of servers) {
+			if (!(await hasAnyMarkerInDir(dir, spec.rootMarkers))) continue;
+			let hasBinary = binaryCache.get(spec.binary);
+			if (hasBinary === undefined) {
+				hasBinary = (await resolveServerBinary(spec.binary, dir, stopDir, extraBinDirs)) !== undefined;
+				binaryCache.set(spec.binary, hasBinary);
+			}
+			if (hasBinary) return true;
+		}
+	}
+
+	return false;
 }

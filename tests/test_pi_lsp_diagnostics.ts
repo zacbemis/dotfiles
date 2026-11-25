@@ -12,6 +12,7 @@ import {
 } from "../.pi/agent/extensions/lsp-diagnostics/manager.ts";
 import {
 	DEFAULT_LSP_SERVERS,
+	hasConfiguredLspWorkspace,
 	type LspServerSpec,
 	resolveServerBinary,
 } from "../.pi/agent/extensions/lsp-diagnostics/servers.ts";
@@ -454,6 +455,40 @@ process.stdin.on("data", (chunk) => {
 			await manager.shutdownAll();
 		}
 		assert.equal(manager.activeServerCount, 0);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("hasConfiguredLspWorkspace gates lsp tool to workspaces with matching config and binary", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "pi-lsp-gate-"));
+	try {
+		const binDir = join(dir, "bin");
+		await mkdir(binDir, { recursive: true });
+		const fakeSpec: LspServerSpec = {
+			id: "fake",
+			extensions: new Set([".fake"]),
+			rootMarkers: ["fake.config"],
+			binary: "gate-test-lsp",
+			args: [],
+			languageIdForExtension: () => "fake",
+		};
+
+		// Empty workspace without marker -> false.
+		assert.equal(await hasConfiguredLspWorkspace(dir, [fakeSpec], [binDir]), false);
+
+		// Marker present in nested monorepo package (depth 2), but binary missing -> false.
+		const pkgDir = join(dir, "packages", "app");
+		await mkdir(pkgDir, { recursive: true });
+		await writeFile(join(pkgDir, "fake.config"), "{}", "utf-8");
+		assert.equal(await hasConfiguredLspWorkspace(dir, [fakeSpec], [binDir]), false);
+
+		// Once binary exists -> true for both root and nested subdir.
+		const binPath = join(binDir, "gate-test-lsp");
+		await writeFile(binPath, "#!/bin/sh\nexit 0\n", "utf-8");
+		await chmod(binPath, 0o755);
+		assert.equal(await hasConfiguredLspWorkspace(dir, [fakeSpec], [binDir]), true);
+		assert.equal(await hasConfiguredLspWorkspace(pkgDir, [fakeSpec], [binDir]), true);
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}

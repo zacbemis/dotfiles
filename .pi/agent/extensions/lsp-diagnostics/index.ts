@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { createLspDiagnosticsManager, type LspNavigationAction } from "./manager.ts";
+import { hasConfiguredLspWorkspace } from "./servers.ts";
 import { createLspSettleGuard, LSP_SETTLE_CONTINUATION_TYPE } from "./settle-guard.ts";
 
 type ContentBlock = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
@@ -72,6 +73,7 @@ function extractEditedPaths(
 export default function (pi: ExtensionAPI): void {
 	const manager = createLspDiagnosticsManager();
 	const settleGuard = createLspSettleGuard();
+	let disabledByWorkspaceGate = false;
 
 	pi.registerTool({
 		name: "lsp",
@@ -97,8 +99,17 @@ export default function (pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.on("session_start", () => {
+	pi.on("session_start", async (_event, ctx) => {
 		settleGuard.resetTurn();
+		const hasLsp = await hasConfiguredLspWorkspace(ctx.cwd);
+		const active = pi.getActiveTools();
+		if (!hasLsp && active.includes("lsp")) {
+			pi.setActiveTools(active.filter((name) => name !== "lsp"));
+			disabledByWorkspaceGate = true;
+		} else if (hasLsp && disabledByWorkspaceGate && !active.includes("lsp")) {
+			pi.setActiveTools([...active, "lsp"]);
+			disabledByWorkspaceGate = false;
+		}
 	});
 
 	pi.on("before_agent_start", () => {
