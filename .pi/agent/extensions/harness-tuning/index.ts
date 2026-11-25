@@ -246,6 +246,7 @@ export default function (pi: ExtensionAPI): void {
 		const guidelines = buildPromptGuidelines({
 			model: ctx.model,
 			activeTools: event.systemPromptOptions.selectedTools,
+			hasSkills: event.systemPromptOptions.skills.length > 0,
 		});
 		event.systemPromptOptions.promptGuidelines.push(...guidelines);
 		event.systemPromptOptions.sections.env = await envCache.resolveEnvSection(ctx.cwd);

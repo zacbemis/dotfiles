@@ -24,12 +24,13 @@ export function classifyModelFamily(model: ModelLike | undefined): ModelFamily {
 export function buildPromptGuidelines(options: {
 	readonly model?: ModelLike;
 	readonly activeTools: readonly string[];
+	readonly hasSkills?: boolean;
 }): string[] {
 	const rules: string[] = [
 		"Prefer parallelizing independent tool calls.",
-		"Keep changes consistent with the structure, naming, style, and patterns of the surrounding code.",
-		"Treat unfamiliar files or uncommitted changes as potential user work and investigate before deleting or overwriting them.",
-		"Never run destructive git or filesystem commands (such as git reset --hard, git checkout --, or recursive deletes on broad paths) unless the user explicitly asked for them.",
+		"Keep changes consistent with surrounding code structure, naming, and style.",
+		"Treat unfamiliar files or uncommitted changes as potential user work; investigate before modifying or deleting them.",
+		"Never run destructive git or filesystem commands (git reset --hard, git checkout --, broad recursive deletes) unless explicitly requested.",
 	];
 
 	if (options.activeTools.includes("bash")) {
@@ -41,12 +42,14 @@ export function buildPromptGuidelines(options: {
 	const family = classifyModelFamily(options.model);
 	if (family === "gpt") {
 		rules.push(
-			"Do not narrate routine reads, searches, or edits; send brief progress updates only for meaningful discoveries, tradeoffs, or blockers.",
-			"Make the final response self-contained and lead with the outcome rather than a play-by-play of steps.",
-			"Run targeted verification appropriate to the change; once checks pass, stop expanding or repeating tests unless new changes or failures justify it.",
-			"Bias toward action when the user asks to do something rather than stopping to propose a plan, and continue until the goal is fulfilled.",
-			"Avoid invoking or re-reading skills based solely on superficial keyword overlap when they are not needed.",
+			"Do not narrate routine reads, searches, or edits; share brief updates only for meaningful discoveries, tradeoffs, or blockers.",
+			"Lead the final response with the outcome rather than a step-by-step log.",
+			"Run targeted verification; stop expanding tests once checks pass.",
+			"Bias toward action when asked to do something; continue until the goal is fulfilled.",
 		);
+		if (options.hasSkills) {
+			rules.push("Avoid invoking or re-reading skills based solely on superficial keyword overlap.");
+		}
 	}
 
 	return rules;

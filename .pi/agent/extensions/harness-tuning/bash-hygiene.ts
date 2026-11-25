@@ -1,9 +1,12 @@
-import { open } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { open, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export const BASH_HYGIENE_DISABLE_ENV = "PI_HARNESS_BASH_HYGIENE";
 
-const DEFAULT_MAX_BYTES = 32 * 1024;
-const DEFAULT_MAX_LINES = 400;
+const DEFAULT_MAX_BYTES = 16 * 1024;
+const DEFAULT_MAX_LINES = 200;
 const FULL_CLEAN_READ_LIMIT_BYTES = 256 * 1024;
 const HEAD_READ_BYTES = 48 * 1024;
 const TAIL_READ_BYTES = 96 * 1024;
@@ -191,6 +194,16 @@ function extractTrailingStatus(text: string, isError: boolean): string {
 	return "";
 }
 
+async function writeCleanTempLog(content: string): Promise<string | undefined> {
+	const filePath = join(tmpdir(), `pi-bash-clean-${randomBytes(8).toString("hex")}.log`);
+	try {
+		await writeFile(filePath, content, "utf-8");
+		return filePath;
+	} catch {
+		return undefined;
+	}
+}
+
 async function readHeadAndTailFromFile(
 	filePath: string,
 	maxBytes: number,
@@ -211,8 +224,10 @@ async function readHeadAndTailFromFile(
 			if (cleanedBytes <= maxBytes && cleanedLines <= maxLines) {
 				return cleaned;
 			}
+			// Persist cleaned output so follow-up read/grep calls see ANSI-free, collapsed text.
+			const cleanPath = (await writeCleanTempLog(cleaned)) ?? filePath;
 			return buildHeadTailSlice(cleaned, cleaned, {
-				fullOutputPath: filePath,
+				fullOutputPath: cleanPath,
 				totalBytes: size,
 				maxBytes,
 				maxLines,
@@ -270,8 +285,8 @@ export async function sanitizeBashToolResult(
 	const maxLines = options?.maxLines ?? DEFAULT_MAX_LINES;
 	const repeatThreshold = options?.repeatThreshold ?? DEFAULT_REPEAT_THRESHOLD;
 
+	const statusSuffix = extractTrailingStatus(text, isError);
 	if (details?.truncation?.truncated && details.fullOutputPath) {
-		const statusSuffix = extractTrailingStatus(text, isError);
 		const replaced = await readHeadAndTailFromFile(details.fullOutputPath, maxBytes, maxLines, repeatThreshold);
 		if (replaced !== undefined) {
 			const finalText = `${replaced}${statusSuffix}`;
@@ -279,6 +294,25 @@ export async function sanitizeBashToolResult(
 		}
 	}
 
-	const cleaned = cleanTerminalOutput(text, repeatThreshold);
-	return { text: cleaned, changed: cleaned !== text };
+	const body = statusSuffix ? text.slice(0, text.length - statusSuffix.length) : text;
+	const cleaned = cleanTerminalOutput(body, repeatThreshold);
+	const cleanedBytes = Buffer.byteLength(cleaned, "utf-8");
+	const cleanedLines = cleaned.split("\n").length;
+
+	if (cleanedBytes > maxBytes || cleanedLines > maxLines) {
+		const spilledPath = await writeCleanTempLog(cleaned);
+		if (spilledPath) {
+			const sliced = buildHeadTailSlice(cleaned, cleaned, {
+				fullOutputPath: spilledPath,
+				totalBytes: Buffer.byteLength(body, "utf-8"),
+				maxBytes,
+				maxLines,
+			});
+			const finalText = `${sliced}${statusSuffix}`;
+			return { text: finalText, changed: finalText !== text };
+		}
+	}
+
+	const finalText = `${cleaned}${statusSuffix}`;
+	return { text: finalText, changed: finalText !== text };
 }

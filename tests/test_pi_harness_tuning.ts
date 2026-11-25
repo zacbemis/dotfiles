@@ -241,6 +241,14 @@ test("prompt-tuning classifies model families, builds targeted rules, and render
 	assert.ok(gptRules.some((r) => r.includes("parallelizing independent tool calls")));
 	assert.ok(gptRules.some((r) => r.includes("echo '===='")));
 	assert.ok(gptRules.some((r) => r.includes("Do not narrate routine reads")));
+	assert.equal(gptRules.some((r) => r.includes("re-reading skills")), false);
+
+	const gptWithSkills = buildPromptGuidelines({
+		model: { id: "gpt-6.2-sol" },
+		activeTools: ["read"],
+		hasSkills: true,
+	});
+	assert.ok(gptWithSkills.some((r) => r.includes("re-reading skills")));
 
 	const claudeNoBash = buildPromptGuidelines({ model: { id: "claude-opus-5-5" }, activeTools: ["read", "grep"] });
 	assert.equal(claudeNoBash.some((r) => r.includes("echo '===='")), false);
@@ -468,6 +476,34 @@ test("bash hygiene strips ANSI/OSC, collapses CR spinners and repeated lines, an
 		assert.match(sanitized.text, /\[\.\.\. middle omitted/);
 		assert.match(sanitized.text, /FINAL SUMMARY: 1 failed\n\nCommand exited with code 1$/);
 		assert.doesNotMatch(sanitized.text, /\x1b\[/);
+
+		// Clean temp log link should itself be ANSI-free when read later.
+		const pathMatch = sanitized.text.match(/Full output: ([^\s\]]+)/);
+		assert.ok(pathMatch?.[1], "expected clean temp log path in omission marker");
+		const savedClean = await readFile(pathMatch[1], "utf-8");
+		assert.doesNotMatch(savedClean, /\x1b\[/);
+		assert.match(savedClean, /^ROOT CAUSE ERROR at line 1/);
+		await rm(pathMatch[1], { force: true });
+
+		// Sub-50KB output exceeding the bash-hygiene budget also spills and slices head+tail.
+		const sub50kLines = ["\x1b[31mSUB50K_TOP\x1b[0m"];
+		for (let i = 0; i < 300; i++) {
+			sub50kLines.push(`PASS synthetic test #${i} ${"ok_".repeat(20)}`);
+		}
+		sub50kLines.push("SUB50K_BOTTOM");
+		const sub50kSanitized = await sanitizeBashToolResult(
+			`${sub50kLines.join("\n")}\n\nCommand exited with code 1`,
+			undefined,
+			true,
+			{ maxBytes: 8_192, maxLines: 80 },
+		);
+		assert.equal(sub50kSanitized.changed, true);
+		assert.match(sub50kSanitized.text, /^SUB50K_TOP/);
+		assert.match(sub50kSanitized.text, /\[\.\.\. middle omitted/);
+		assert.match(sub50kSanitized.text, /SUB50K_BOTTOM\n\nCommand exited with code 1$/);
+		const subPathMatch = sub50kSanitized.text.match(/Full output: ([^\s\]]+)/);
+		assert.ok(subPathMatch?.[1]);
+		await rm(subPathMatch[1], { force: true });
 
 		// Opt-out env skips sanitization.
 		process.env[BASH_HYGIENE_DISABLE_ENV] = "0";
