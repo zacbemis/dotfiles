@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -21,10 +21,29 @@ const TUNED_EXTENSIONS = [
 
 const MODEL = process.env.PI_VERIFY_MODEL ?? "openai-codex/gpt-6-luna";
 const THINKING = process.env.PI_VERIFY_THINKING ?? "low";
+const BENCH_TRIALS = Math.max(1, Number.parseInt(process.env.PI_VERIFY_TRIALS ?? "3", 10) || 3);
 const MASON_TSC = join(
 	homedir(),
 	".local/share/nvim/mason/packages/typescript-language-server/node_modules/.bin/tsc",
 );
+
+function resolvePiCodingAgentEntry(): string {
+	const installRoot = join(homedir(), ".pi/agent/install");
+	const versionFile = join(installRoot, "current-version");
+	if (existsSync(versionFile)) {
+		const ver = readFileSync(versionFile, "utf8").trim();
+		const candidate = join(installRoot, "releases", ver, "node_modules/@earendil-works/pi-coding-agent/dist/index.js");
+		if (existsSync(candidate)) return candidate;
+	}
+	const releasesDir = join(installRoot, "releases");
+	if (existsSync(releasesDir)) {
+		for (const ver of readdirSync(releasesDir).sort().reverse()) {
+			const candidate = join(releasesDir, ver, "node_modules/@earendil-works/pi-coding-agent/dist/index.js");
+			if (existsSync(candidate)) return candidate;
+		}
+	}
+	throw new Error("Unable to locate installed @earendil-works/pi-coding-agent under ~/.pi/agent/install");
+}
 
 interface ToolRecord {
 	readonly id: string;
@@ -56,13 +75,107 @@ interface PiRunResult {
 	readonly stderr: string;
 }
 
+interface BenchTrialResult extends PiRunResult {
+	readonly passed: boolean;
+	readonly note: string;
+	readonly cacheHitRate: number;
+}
+
+interface BenchModeSummary {
+	readonly trials: readonly BenchTrialResult[];
+	readonly passedCount: number;
+	readonly passAt1: number;
+	readonly passAll: boolean;
+	readonly medianTurns: number;
+	readonly medianTools: number;
+	readonly medianTokens: number;
+	readonly medianCost: number;
+	readonly medianWallMs: number;
+	readonly medianCacheHit: number;
+}
+
 interface BenchRow {
 	readonly task: string;
-	readonly base: PiRunResult & { readonly passed: boolean; readonly note: string };
-	readonly tuned: PiRunResult & { readonly passed: boolean; readonly note: string };
+	readonly base: BenchModeSummary;
+	readonly tuned: BenchModeSummary;
 }
 
 const benchRows: BenchRow[] = [];
+
+function median(values: readonly number[]): number {
+	if (values.length === 0) return 0;
+	const sorted = [...values].sort((a, b) => a - b);
+	const mid = Math.floor(sorted.length / 2);
+	return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
+}
+
+function computeCacheHitRate(usage: UsageTotals): number {
+	const totalPrompt = usage.input + usage.cacheRead;
+	return totalPrompt > 0 ? usage.cacheRead / totalPrompt : 0;
+}
+
+function summarizeTrials(trials: readonly BenchTrialResult[]): BenchModeSummary {
+	const passedCount = trials.filter((t) => t.passed).length;
+	return {
+		trials,
+		passedCount,
+		passAt1: trials.length > 0 ? passedCount / trials.length : 0,
+		passAll: trials.length > 0 && passedCount === trials.length,
+		medianTurns: median(trials.map((t) => t.turns)),
+		medianTools: median(trials.map((t) => t.toolCalls.length)),
+		medianTokens: median(trials.map((t) => t.usage.totalTokens)),
+		medianCost: median(trials.map((t) => t.usage.cost)),
+		medianWallMs: median(trials.map((t) => t.wallMs)),
+		medianCacheHit: median(trials.map((t) => t.cacheHitRate)),
+	};
+}
+
+async function runBenchmarkTrials(options: {
+	readonly prefix: string;
+	readonly prompt: string;
+	readonly setupRepo: (dir: string) => Promise<void>;
+	readonly verifyRepo: (dir: string) => Promise<{ passed: boolean; note: string }> | { passed: boolean; note: string };
+}): Promise<{ base: BenchModeSummary; tuned: BenchModeSummary }> {
+	const trialIndices = Array.from({ length: BENCH_TRIALS }, (_, i) => i);
+	const pairs = await Promise.all(
+		trialIndices.map(async (idx) => {
+			const baseDir = await mkdtemp(join(tmpdir(), `${options.prefix}-base-${idx}-`));
+			const tunedDir = await mkdtemp(join(tmpdir(), `${options.prefix}-tuned-${idx}-`));
+			try {
+				await Promise.all([options.setupRepo(baseDir), options.setupRepo(tunedDir)]);
+				const [baseRun, tunedRun] = await Promise.all([
+					runPi({ mode: "base", cwd: baseDir, prompt: options.prompt }),
+					runPi({ mode: "tuned", cwd: tunedDir, prompt: options.prompt }),
+				]);
+				const [baseCheck, tunedCheck] = await Promise.all([
+					options.verifyRepo(baseDir),
+					options.verifyRepo(tunedDir),
+				]);
+				const baseTrial: BenchTrialResult = {
+					...baseRun,
+					...baseCheck,
+					cacheHitRate: computeCacheHitRate(baseRun.usage),
+				};
+				const tunedTrial: BenchTrialResult = {
+					...tunedRun,
+					...tunedCheck,
+					cacheHitRate: computeCacheHitRate(tunedRun.usage),
+				};
+				return { baseTrial, tunedTrial };
+			} finally {
+				await Promise.all([
+					rm(baseDir, { recursive: true, force: true }),
+					rm(tunedDir, { recursive: true, force: true }),
+				]);
+			}
+		}),
+	);
+
+	return {
+		base: summarizeTrials(pairs.map((p) => p.baseTrial)),
+		tuned: summarizeTrials(pairs.map((p) => p.tunedTrial)),
+	};
+}
 
 function runCmd(cmd: string, args: string[], cwd: string): { ok: boolean; stdout: string; stderr: string } {
 	try {
@@ -577,7 +690,7 @@ test("functional 9: remote-thread live session loads trimmed schema and override
 		else process.env.PI_THREAD_MAILBOX_DIR = prevMailDir;
 	});
 
-	const piPkg = await import("/home/zacb/.pi/agent/install/releases/1.6.0/node_modules/@earendil-works/pi-coding-agent/dist/index.js");
+	const piPkg = await import(resolvePiCodingAgentEntry());
 	const sessionManager = piPkg.SessionManager.create(DOTFILES_ROOT, sessDir);
 	const { session, extensionsResult } = await piPkg.createAgentSession({
 		cwd: DOTFILES_ROOT,
@@ -652,7 +765,7 @@ test("functional 10: live warm-prefix compaction with gpt-6-luna produces worksp
 	await writeFile(join(dir, "app.ts"), `export const VERSION = 1;\n`);
 	initGitRepo(dir);
 
-	const piPkg = await import("/home/zacb/.pi/agent/install/releases/1.6.0/node_modules/@earendil-works/pi-coding-agent/dist/index.js");
+	const piPkg = await import(resolvePiCodingAgentEntry());
 	const sessionManager = piPkg.SessionManager.inMemory(dir);
 	const settingsManager = piPkg.SettingsManager.inMemory({
 		compaction: { enabled: true, keepRecentTokens: 100, reserveTokens: 1024 },
@@ -738,45 +851,67 @@ async function setupBenchARepo(dir: string): Promise<void> {
 	initGitRepo(dir);
 }
 
-test("benchmark A: Base Pi vs Tuned Pi on multi-file TypeScript contract refactor", async (t) => {
-	const baseDir = await mkdtemp(join(tmpdir(), "pi-bench-a-base-"));
-	const tunedDir = await mkdtemp(join(tmpdir(), "pi-bench-a-tuned-"));
-	t.after(() => rm(baseDir, { recursive: true, force: true }));
-	t.after(() => rm(tunedDir, { recursive: true, force: true }));
-	await Promise.all([setupBenchARepo(baseDir), setupBenchARepo(tunedDir)]);
-
+test("benchmark A: Base Pi vs Tuned Pi on multi-file TypeScript contract refactor", async () => {
 	const prompt =
 		"Refactor `LineItem.unitPrice` (dollars) to `LineItem.unitPriceCents` (integer cents, e.g. $15 -> 1500, $20 -> 2000) across all files in `src/`. Keep `lineTotal`, `subtotal`, and `totalWithTax` returning integer cents, update `src/cli.ts`, `src/report.ts`, and `src/pricing.test.ts`, and make sure `node src/pricing.test.ts` passes with no TypeScript errors.";
 
-	const [baseRun, tunedRun] = await Promise.all([
-		runPi({ mode: "base", cwd: baseDir, prompt }),
-		runPi({ mode: "tuned", cwd: tunedDir, prompt }),
-	]);
-
-	const verify = async (dir: string) => {
-		const testRes = runCmd("node", ["src/pricing.test.ts"], dir);
-		const tscRes = existsSync(MASON_TSC) ? runCmd(MASON_TSC, ["--noEmit"], dir) : { ok: true, stdout: "", stderr: "" };
-		const models = await readFile(join(dir, "src/models.ts"), "utf8");
-		const pricingTest = await readFile(join(dir, "src/pricing.test.ts"), "utf8");
-		const ok =
-			testRes.ok &&
-			tscRes.ok &&
-			models.includes("unitPriceCents") &&
-			!models.includes("unitPrice:") &&
-			pricingTest.includes("5500");
-		const note = ok
-			? "tests+tsc ok"
-			: `test=${testRes.ok} tsc=${tscRes.ok} cents=${pricingTest.includes("5500")}`;
-		return { passed: ok, note };
-	};
-
-	const [baseCheck, tunedCheck] = await Promise.all([verify(baseDir), verify(tunedDir)]);
-	benchRows.push({
-		task: "A: TS multi-file refactor",
-		base: { ...baseRun, ...baseCheck },
-		tuned: { ...tunedRun, ...tunedCheck },
+	const { base, tuned } = await runBenchmarkTrials({
+		prefix: "pi-bench-a",
+		prompt,
+		setupRepo: setupBenchARepo,
+		verifyRepo: async (dir) => {
+			// Inject held-out acceptance test after the agent exits to verify unseen contract cases.
+			const heldOutPath = join(dir, "src/.heldout.verify.ts");
+			await writeFile(
+				heldOutPath,
+				`import { lineTotal, subtotal, totalWithTax } from "./pricing.ts";
+import { renderInvoice } from "./report.ts";
+const inv = {
+	id: "heldout",
+	taxRate: 0.0825,
+	items: [
+		{ sku: "X", qty: 3, unitPriceCents: 333 },
+		{ sku: "Y", qty: 0, unitPriceCents: 500 },
+	],
+};
+if (lineTotal(inv.items[0]!) !== 999) throw new Error("bad lineTotal");
+if (subtotal(inv) !== 999) throw new Error("bad subtotal");
+if (totalWithTax(inv) !== 1081) throw new Error("bad totalWithTax: " + totalWithTax(inv));
+if (!renderInvoice(inv).includes("TOTAL=1081")) throw new Error("bad renderInvoice");
+`,
+				"utf8",
+			);
+			const testRes = runCmd("node", ["src/pricing.test.ts"], dir);
+			const heldOutRes = runCmd("node", ["src/.heldout.verify.ts"], dir);
+			const tscRes = existsSync(MASON_TSC) ? runCmd(MASON_TSC, ["--noEmit"], dir) : { ok: true, stdout: "", stderr: "" };
+			const models = await readFile(join(dir, "src/models.ts"), "utf8");
+			const pricingTest = await readFile(join(dir, "src/pricing.test.ts"), "utf8");
+			const ok =
+				testRes.ok &&
+				heldOutRes.ok &&
+				tscRes.ok &&
+				models.includes("unitPriceCents") &&
+				!models.includes("unitPrice:") &&
+				pricingTest.includes("5500");
+			const note = ok
+				? "tests+heldout+tsc ok"
+				: `test=${testRes.ok} heldout=${heldOutRes.ok} tsc=${tscRes.ok} cents=${pricingTest.includes("5500")}`;
+			return { passed: ok, note };
+		},
 	});
-	assert.equal(tunedCheck.passed, true, `Tuned Pi failed Bench A: ${tunedCheck.note}`);
+
+	benchRows.push({ task: "A: TS multi-file refactor", base, tuned });
+	assert.equal(
+		tuned.passedCount,
+		BENCH_TRIALS,
+		`Tuned Pi failed Bench A (${tuned.passedCount}/${BENCH_TRIALS}): ${tuned.trials.map((r) => r.note).join("; ")}`,
+	);
+	if (tuned.medianTurns >= 3) {
+		assert.ok(
+			tuned.medianCacheHit >= 0.35,
+			`Bench A Tuned cache hit rate too low: ${(tuned.medianCacheHit * 100).toFixed(1)}%`,
+		);
+	}
 });
 
 async function setupBenchBRepo(dir: string): Promise<void> {
@@ -796,35 +931,56 @@ async function setupBenchBRepo(dir: string): Promise<void> {
 	initGitRepo(dir);
 }
 
-test("benchmark B: Base Pi vs Tuned Pi on noisy 65KB log debugging + 2-file fix", async (t) => {
-	const baseDir = await mkdtemp(join(tmpdir(), "pi-bench-b-base-"));
-	const tunedDir = await mkdtemp(join(tmpdir(), "pi-bench-b-tuned-"));
-	t.after(() => rm(baseDir, { recursive: true, force: true }));
-	t.after(() => rm(tunedDir, { recursive: true, force: true }));
-	await Promise.all([setupBenchBRepo(baseDir), setupBenchBRepo(tunedDir)]);
-
+test("benchmark B: Base Pi vs Tuned Pi on noisy 65KB log debugging + 2-file fix", async () => {
 	const prompt =
 		"Run `node test.mjs`, diagnose every failing test, fix the bugs in `src/`, and re-run `node test.mjs` until all tests pass.";
 
-	const [baseRun, tunedRun] = await Promise.all([
-		runPi({ mode: "base", cwd: baseDir, prompt }),
-		runPi({ mode: "tuned", cwd: tunedDir, prompt }),
-	]);
+	const { base, tuned } = await runBenchmarkTrials({
+		prefix: "pi-bench-b",
+		prompt,
+		setupRepo: setupBenchBRepo,
+		verifyRepo: async (dir) => {
+			// Anti-tampering: verify agent did not modify test.mjs, and grade against unseen edge cases.
+			const testDiff = runCmd("git", ["diff", "--", "test.mjs"], dir).stdout.trim();
+			await writeFile(
+				join(dir, ".heldout.verify.mjs"),
+				`import { strict as assert } from "node:assert";
+import { parsePairs } from "./src/parser.mjs";
+import { slugify } from "./src/format.mjs";
 
-	const verify = (dir: string) => {
-		const res = runCmd("node", ["test.mjs"], dir);
-		const passed = res.ok && res.stdout.includes("ALL TESTS PASSED");
-		return { passed, note: passed ? "all tests pass" : res.stderr || res.stdout.slice(-120) };
-	};
-
-	const baseCheck = verify(baseDir);
-	const tunedCheck = verify(tunedDir);
-	benchRows.push({
-		task: "B: Noisy log debug + fix",
-		base: { ...baseRun, ...baseCheck },
-		tuned: { ...tunedRun, ...tunedCheck },
+assert.deepEqual(parsePairs("token=a=b=c\\n\\n  # comment\\nkey = val=1"), {
+	token: "a=b=c",
+	key: "val=1",
+});
+assert.equal(slugify("  --Alpha, Beta... (v2)!! --  "), "alpha-beta-v2");
+`,
+				"utf8",
+			);
+			const res = runCmd("node", ["test.mjs"], dir);
+			const heldOut = runCmd("node", [".heldout.verify.mjs"], dir);
+			const untampered = testDiff === "";
+			const passed = res.ok && res.stdout.includes("ALL TESTS PASSED") && heldOut.ok && untampered;
+			return {
+				passed,
+				note: passed
+					? "all+heldout pass"
+					: `test=${res.ok} heldout=${heldOut.ok} untampered=${untampered}`,
+			};
+		},
 	});
-	assert.equal(tunedCheck.passed, true, `Tuned Pi failed Bench B: ${tunedCheck.note}`);
+
+	benchRows.push({ task: "B: Noisy log debug + fix", base, tuned });
+	assert.equal(
+		tuned.passedCount,
+		BENCH_TRIALS,
+		`Tuned Pi failed Bench B (${tuned.passedCount}/${BENCH_TRIALS}): ${tuned.trials.map((r) => r.note).join("; ")}`,
+	);
+	if (tuned.medianTurns >= 3) {
+		assert.ok(
+			tuned.medianCacheHit >= 0.35,
+			`Bench B Tuned cache hit rate too low: ${(tuned.medianCacheHit * 100).toFixed(1)}%`,
+		);
+	}
 });
 
 async function setupBenchCRepo(dir: string): Promise<void> {
@@ -862,48 +1018,72 @@ async function setupBenchCRepo(dir: string): Promise<void> {
 	initGitRepo(dir);
 }
 
-test("benchmark C: Base Pi vs Tuned Pi on multi-module investigation + fix + git commit", async (t) => {
-	const baseDir = await mkdtemp(join(tmpdir(), "pi-bench-c-base-"));
-	const tunedDir = await mkdtemp(join(tmpdir(), "pi-bench-c-tuned-"));
-	t.after(() => rm(baseDir, { recursive: true, force: true }));
-	t.after(() => rm(tunedDir, { recursive: true, force: true }));
-	await Promise.all([setupBenchCRepo(baseDir), setupBenchCRepo(tunedDir)]);
-
+test("benchmark C: Base Pi vs Tuned Pi on multi-module investigation + fix + git commit", async () => {
 	const prompt =
 		"Investigate why cached quotes expire almost immediately instead of lasting 5 minutes, fix the root cause, verify with `node test.mjs`, and create a git commit for the fix.";
 
-	const [baseRun, tunedRun] = await Promise.all([
-		runPi({ mode: "base", cwd: baseDir, prompt }),
-		runPi({ mode: "tuned", cwd: tunedDir, prompt }),
-	]);
+	const { base, tuned } = await runBenchmarkTrials({
+		prefix: "pi-bench-c",
+		prompt,
+		setupRepo: setupBenchCRepo,
+		verifyRepo: async (dir) => {
+			const status = runCmd("git", ["status", "--porcelain"], dir);
+			const log = runCmd("git", ["log", "-1", "--format=%B"], dir);
+			const commitCount = Number(runCmd("git", ["rev-list", "--count", "HEAD"], dir).stdout.trim());
+			const testUntampered =
+				commitCount >= 2 ? runCmd("git", ["diff", "HEAD~1", "HEAD", "--", "test.mjs"], dir).stdout.trim() === "" : false;
+			const res = runCmd("node", ["test.mjs"], dir);
 
-	const verify = (dir: string) => {
-		const res = runCmd("node", ["test.mjs"], dir);
-		const log = runCmd("git", ["log", "-1", "--format=%B"], dir);
-		const status = runCmd("git", ["status", "--porcelain"], dir);
-		const commitCount = Number(runCmd("git", ["rev-list", "--count", "HEAD"], dir).stdout.trim());
-		const conventional = /^(feat|fix|chore|refactor|perf)(\([^)]+\))?: /.test(log.stdout.trim());
-		const noAttribution = !/co-authored-by|claude|generated with/i.test(log.stdout);
-		const passed = res.ok && commitCount >= 2 && status.stdout.trim() === "";
-		const note = `${passed ? "ok" : "fail"} (conv=${conventional}, cleanAttr=${noAttribution})`;
-		return { passed, note };
-	};
+			// Inject held-out TTL boundary checks after inspecting git clean status.
+			await writeFile(
+				join(dir, ".heldout.verify.mjs"),
+				`import { strict as assert } from "node:assert";
+import { createQuoteService } from "./src/billing/quotes.mjs";
 
-	const baseCheck = verify(baseDir);
-	const tunedCheck = verify(tunedDir);
-	benchRows.push({
-		task: "C: Multi-module fix + commit",
-		base: { ...baseRun, ...baseCheck },
-		tuned: { ...tunedRun, ...tunedCheck },
+let calls = 0;
+const svc = createQuoteService((id) => ({ id, seq: ++calls }));
+const t0 = 5_000_000;
+assert.equal(svc.getQuote("a", t0).cached, false);
+assert.equal(svc.getQuote("b", t0 + 1000).cached, false);
+assert.equal(svc.getQuote("a", t0 + 299_999).cached, true);
+assert.equal(svc.getQuote("a", t0 + 300_000).cached, false);
+assert.equal(svc.getQuote("b", t0 + 300_999).cached, true);
+`,
+				"utf8",
+			);
+			const heldOut = runCmd("node", [".heldout.verify.mjs"], dir);
+			const conventional = /^(feat|fix|chore|refactor|perf)(\([^)]+\))?: /.test(log.stdout.trim());
+			const noAttribution = !/co-authored-by|claude|generated with/i.test(log.stdout);
+			const passed =
+				res.ok && heldOut.ok && testUntampered && commitCount >= 2 && status.stdout.trim() === "";
+			const note = `${passed ? "ok" : "fail"} (conv=${conventional}, cleanAttr=${noAttribution}, heldout=${heldOut.ok})`;
+			return { passed, note };
+		},
 	});
-	assert.equal(tunedCheck.passed, true, `Tuned Pi failed Bench C: ${tunedCheck.note}`);
+
+	benchRows.push({ task: "C: Multi-module fix + commit", base, tuned });
+	assert.equal(
+		tuned.passedCount,
+		BENCH_TRIALS,
+		`Tuned Pi failed Bench C (${tuned.passedCount}/${BENCH_TRIALS}): ${tuned.trials.map((r) => r.note).join("; ")}`,
+	);
+	if (tuned.medianTurns >= 3) {
+		assert.ok(
+			tuned.medianCacheHit >= 0.35,
+			`Bench C Tuned cache hit rate too low: ${(tuned.medianCacheHit * 100).toFixed(1)}%`,
+		);
+	}
 });
 
 test("benchmark summary table", () => {
-	const fmt = (r: PiRunResult & { passed: boolean; note: string }) =>
-		`${r.passed ? "PASS" : "FAIL"} | ${r.turns}t | ${r.toolCalls.length} tools | in=${r.usage.input} cr=${r.usage.cacheRead} out=${r.usage.output} | $${r.usage.cost.toFixed(5)} | ${(r.wallMs / 1000).toFixed(1)}s | ${r.note}`;
+	const fmt = (s: BenchModeSummary) => {
+		const k = s.trials.length;
+		const passLabel = `${s.passedCount}/${k} (pass^${k}=${s.passAll ? "100%" : "0%"})`;
+		const notes = [...new Set(s.trials.map((t) => t.note))].join(" | ");
+		return `${passLabel} | med ${s.medianTurns.toFixed(1)}t | ${s.medianTools.toFixed(1)} tools | ${Math.round(s.medianTokens)} tok | cache=${(s.medianCacheHit * 100).toFixed(0)}% | $${s.medianCost.toFixed(5)} | ${(s.medianWallMs / 1000).toFixed(1)}s | ${notes}`;
+	};
 
-	console.log(`\n=== A/B Benchmark Summary (${MODEL}, thinking=${THINKING}) ===`);
+	console.log(`\n=== A/B Benchmark Summary (${MODEL}, thinking=${THINKING}, k=${BENCH_TRIALS} trials/task) ===`);
 	let baseCost = 0;
 	let tunedCost = 0;
 	let baseWall = 0;
@@ -912,28 +1092,32 @@ test("benchmark summary table", () => {
 	let tunedTokens = 0;
 	let baseTools = 0;
 	let tunedTools = 0;
+	let basePassed = 0;
+	let tunedPassed = 0;
+	let totalTrials = 0;
 
 	for (const row of benchRows) {
 		console.log(`\n${row.task}`);
 		console.log(`  Base : ${fmt(row.base)}`);
 		console.log(`  Tuned: ${fmt(row.tuned)}`);
-		console.log(
-			`  Tools: base=[${row.base.toolCalls.map((c) => c.name).join(",")}] tuned=[${row.tuned.toolCalls.map((c) => c.name).join(",")}]`,
-		);
-		baseCost += row.base.usage.cost;
-		tunedCost += row.tuned.usage.cost;
-		baseWall += row.base.wallMs;
-		tunedWall += row.tuned.wallMs;
-		baseTokens += row.base.usage.totalTokens;
-		tunedTokens += row.tuned.usage.totalTokens;
-		baseTools += row.base.toolCalls.length;
-		tunedTools += row.tuned.toolCalls.length;
+		baseCost += row.base.medianCost;
+		tunedCost += row.tuned.medianCost;
+		baseWall += row.base.medianWallMs;
+		tunedWall += row.tuned.medianWallMs;
+		baseTokens += row.base.medianTokens;
+		tunedTokens += row.tuned.medianTokens;
+		baseTools += row.base.medianTools;
+		tunedTools += row.tuned.medianTools;
+		basePassed += row.base.passedCount;
+		tunedPassed += row.tuned.passedCount;
+		totalTrials += row.base.trials.length;
 	}
 	if (benchRows.length > 0) {
 		const pct = (a: number, b: number) => (a === 0 ? "n/a" : `${(((b - a) / a) * 100).toFixed(1)}%`);
-		console.log("\nTotals across all benchmarks:");
-		console.log(`  Tool calls: Base=${baseTools}, Tuned=${tunedTools} (${pct(baseTools, tunedTools)})`);
-		console.log(`  Tokens    : Base=${baseTokens}, Tuned=${tunedTokens} (${pct(baseTokens, tunedTokens)})`);
+		console.log("\nSum of per-task medians across all benchmarks:");
+		console.log(`  Pass rate : Base=${basePassed}/${totalTrials}, Tuned=${tunedPassed}/${totalTrials}`);
+		console.log(`  Tool calls: Base=${baseTools.toFixed(1)}, Tuned=${tunedTools.toFixed(1)} (${pct(baseTools, tunedTools)})`);
+		console.log(`  Tokens    : Base=${Math.round(baseTokens)}, Tuned=${Math.round(tunedTokens)} (${pct(baseTokens, tunedTokens)})`);
 		console.log(`  Cost      : Base=$${baseCost.toFixed(5)}, Tuned=$${tunedCost.toFixed(5)} (${pct(baseCost, tunedCost)})`);
 		console.log(`  Wall time : Base=${(baseWall / 1000).toFixed(1)}s, Tuned=${(tunedWall / 1000).toFixed(1)}s (${pct(baseWall, tunedWall)})\n`);
 	}
