@@ -22,6 +22,12 @@ Pi remote-thread mailbox, wait, cancellation, and standalone restart checks (Nod
 node --experimental-transform-types --test tests/test_pi_remote_thread.ts
 ```
 
+Pi harness-tuning patch, prompt/provider tuning, read/edit ergonomics, auto-format, and explore checks:
+
+```bash
+node --test tests/test_pi_harness_tuning.ts
+```
+
 Herdr's Rust shortcut helper has its own unit and mock-socket integration tests:
 
 ```bash
