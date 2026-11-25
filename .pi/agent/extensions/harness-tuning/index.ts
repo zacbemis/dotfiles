@@ -22,11 +22,6 @@ import {
 	runWarmCompaction,
 } from "./compaction.ts";
 import { createDoomLoopTracker } from "./doom-loop.ts";
-import {
-	EXPLORE_ENV_FLAG,
-	EXPLORE_TOOL_NAME,
-	runExploreSubagent,
-} from "./explore.ts";
 import { createFileFreshnessTracker } from "./file-freshness.ts";
 import { createMicrocompactor } from "./microcompact.ts";
 import {
@@ -56,17 +51,6 @@ const patchSchema = Type.Object({
 	patch: Type.String({
 		description: "Complete patch enclosed in *** Begin Patch / *** End Patch markers.",
 	}),
-});
-
-const exploreSchema = Type.Object({
-	task: Type.String({
-		description: "Focused read-only exploration question or search goal to investigate in an isolated subagent.",
-	}),
-	path: Type.Optional(
-		Type.String({
-			description: "Optional subdirectory to scope the exploration working directory (defaults to current cwd).",
-		}),
-	),
 });
 
 type ContentBlock = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
@@ -426,47 +410,4 @@ export default function (pi: ExtensionAPI): void {
 			continue: true,
 		};
 	});
-
-	// 7. Isolated read-only explore subagent tool (guarded against recursive spawn).
-	if (process.env[EXPLORE_ENV_FLAG] !== "1") {
-		pi.registerTool({
-			name: EXPLORE_TOOL_NAME,
-			label: "explore",
-			description:
-				"Run an isolated read-only subagent with read/grep/find/ls to investigate a codebase question and return concise findings without filling the main context.",
-			promptSnippet:
-				"Run an isolated read-only subagent for broad codebase discovery or multi-file tracing without bloating the main context",
-			promptGuidelines: [
-				"Use explore for open-ended codebase discovery or multi-file investigations; use read, grep, or find directly for known files or narrow lookups.",
-			],
-			parameters: exploreSchema,
-			async execute(_toolCallId, params, signal, onUpdate, ctx) {
-				const result = await runExploreSubagent({
-					baseCwd: ctx.cwd,
-					subPath: params.path,
-					task: params.task,
-					currentModel: ctx.model,
-					availableModels: ctx.modelRegistry.getAvailable(),
-					signal,
-					onProgress: (toolCalls, toolName, modelLabel) => {
-						onUpdate?.({
-							content: [
-								{
-									type: "text",
-									text: `Exploring (${toolCalls} tool call${toolCalls === 1 ? "" : "s"}: ${toolName})...`,
-								},
-							],
-							details: { model: modelLabel, toolCalls },
-						});
-					},
-				});
-
-				return {
-					isError: result.isError,
-					content: [{ type: "text", text: result.text }],
-					details: result.details,
-				};
-			},
-		});
-	}
 }
