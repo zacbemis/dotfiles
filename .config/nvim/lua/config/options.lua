@@ -1,6 +1,7 @@
 local opt = vim.opt
 
 -- Appearance
+opt.guicursor = "n-v-c-sm:block,i-ci-ve:ver25,r-cr-o:hor20"
 opt.number = true
 opt.relativenumber = true
 opt.numberwidth = 2 -- Grow automatically when more digits are needed.

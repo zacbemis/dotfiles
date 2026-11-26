@@ -50,6 +50,8 @@ end
 refresh()
 local bar, signs = windows()
 assert(bar, 'scrollbar missing')
+assert(api.nvim_buf_get_lines(api.nvim_win_get_buf(bar), 0, 1, false)[1] == '▌',
+  'left-half scrollbar must touch the right-half Git marks without a gap')
 assert(#signs >= 3, 'Git overview should include add, change and delete')
 local first_row = api.nvim_win_get_config(bar).row
 for _, win in ipairs(signs) do
@@ -62,9 +64,21 @@ vim.cmd('normal! Gzb')
 refresh()
 bar = windows()
 assert(api.nvim_win_get_config(bar).row > first_row, 'thumb should follow scrolling')
--- Theme resets retain the scrollbar color link.
+-- Selection backgrounds must not paint a third strip beside the narrow thumb,
+-- including after theme changes and while hovering over the scrollbar.
+local function check_highlights()
+  for _, group in ipairs({'ScrollView', 'ScrollViewHover'}) do
+    local hl = api.nvim_get_hl(0, {name=group, link=false})
+    assert(hl.fg and not hl.bg and not hl.reverse, group .. ' must be foreground-only')
+  end
+end
+check_highlights()
 vim.cmd.colorscheme('dotfiles')
-assert(api.nvim_get_hl(0, {name='ScrollView'}).link == 'Comment')
+check_highlights()
+api.nvim_set_hl(0, 'ScrollView', {link='Visual'})
+api.nvim_set_hl(0, 'ScrollViewHover', {fg='#ffffff', bg='#334477'})
+api.nvim_exec_autocmds('ColorScheme', {pattern='other-theme'})
+check_highlights()
 -- Explorer/review sidebars must not get editor scrollbars.
 for _, ft in ipairs({'NvimTree', 'GitReview'}) do
   vim.bo.filetype = ft
