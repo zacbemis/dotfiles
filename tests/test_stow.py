@@ -1,4 +1,4 @@
-"""Deployment hygiene: only source configs and intentional skills reach HOME."""
+"""Deployment hygiene: only source configs and intentional tool files reach HOME."""
 import os
 from pathlib import Path
 import shutil
@@ -38,12 +38,12 @@ class StowDeployment(unittest.TestCase):
                 path.write_text("fixture")
             subprocess.run(["stow", "--no-folding", "--dir", str(package), "--target", str(home), "."],
                            check=True, capture_output=True, text=True)
-            for relative in (".config/demo/config.lua", ".config/demo/helper.py", "skills/system/example/SKILL.md"):
+            for relative in (".config/demo/config.lua", ".config/demo/helper.py"):
                 with self.subTest(deployed=relative):
                     self.assertTrue((home / relative).is_symlink())
                     self.assertEqual((home / relative).resolve(), package / relative)
             for relative in (".config/demo/__pycache__", ".config/demo/loose.pyc", ".config/demo/loose.pyo",
-                             "tests", "scripts", "tool-settings", ".agents", ".gemini", "README.md", ".stow-local-ignore"):
+                             "tests", "scripts", "tool-settings", ".agents", ".gemini", "skills", "README.md", ".stow-local-ignore"):
                 with self.subTest(ignored=relative):
                     self.assertFalse((home / relative).exists())
                     self.assertFalse((home / relative).is_symlink())
@@ -68,7 +68,7 @@ class StowDeployment(unittest.TestCase):
             subprocess.run([*command, "."], env=env, check=True, capture_output=True, text=True)
             for name in (".gitconfig", ".clang-format", ".config/hypr/hyprland.lua", ".config/hypr/scripts/display-power.sh",
                          ".config/quickshell/shell.qml", ".config/nvim/init.lua", ".pi/agent/settings.json",
-                         ".claude/settings.json", "skills/system/run-workflow/SKILL.md"):
+                         ".pi/agent/skills/agent-dev-server/SKILL.md", ".claude/settings.json"):
                 with self.subTest(path=name):
                     self.assertTrue((home / name).is_symlink())
                     self.assertEqual((home / name).resolve(), package / name)

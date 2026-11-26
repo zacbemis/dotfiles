@@ -5,6 +5,25 @@
   "defaultModel": "gpt-6.1-sol",
   "defaultThinkingLevel": "high",
   "showCacheMissNotices": true,
+  "defaultTools": [
+    "+grep",
+    "+find"
+  ],
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 24576,
+    "keepRecentTokens": 15000,
+    "modelOverrides": {
+      "openai-codex/gpt-6.2-sol": {
+        "reserveTokens": 300000,
+        "keepRecentTokens": 15000
+      },
+      "openai-codex/gpt-6.2-astra": {
+        "reserveTokens": 92000,
+        "keepRecentTokens": 15000
+      }
+    }
+  },
   "packages": [
     "npm:pi-web-access",
     "npm:pi-vim",
