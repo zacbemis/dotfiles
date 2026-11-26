@@ -236,6 +236,7 @@ test("prompt-tuning classifies model families, builds targeted rules, and render
 	assert.equal(classifyModelFamily({ id: "gpt-4.1" }), "other");
 	assert.equal(classifyModelFamily({ id: "gpt-oss-120b" }), "other");
 	assert.equal(classifyModelFamily({ id: "claude-opus-5-5" }), "claude");
+	assert.equal(classifyModelFamily({ provider: "antigravity-acp", id: "gemini-4-neon" }), "gemini");
 
 	const gptRules = buildPromptGuidelines({ model: { id: "gpt-6.2-sol" }, activeTools: ["read", "bash", "patch"] });
 	assert.ok(gptRules.some((r) => r.includes("parallelizing independent tool calls")));
@@ -253,6 +254,14 @@ test("prompt-tuning classifies model families, builds targeted rules, and render
 	const claudeNoBash = buildPromptGuidelines({ model: { id: "claude-opus-5-5" }, activeTools: ["read", "grep"] });
 	assert.equal(claudeNoBash.some((r) => r.includes("echo '===='")), false);
 	assert.equal(claudeNoBash.some((r) => r.includes("surrounding comment density")), false);
+	assert.equal(claudeNoBash.some((r) => r.includes("pi_explore")), false);
+
+	const neonOrchestrator = buildPromptGuidelines({
+		model: { provider: "antigravity-acp", id: "gemini-4-neon" },
+		activeTools: ["read", "bash", "explore", "remote_thread"],
+	});
+	assert.ok(neonOrchestrator.some((r) => r.includes("pi_explore") && r.includes("view_file")));
+	assert.ok(neonOrchestrator.some((r) => r.includes("orchestrating work via remote_thread")));
 
 	const envText = buildEnvSection({
 		dateString: "Wed Nov 25 2026",

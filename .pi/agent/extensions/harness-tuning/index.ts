@@ -84,6 +84,7 @@ function extractTextContent(content: readonly ContentBlock[]): string {
 }
 
 export default function (pi: ExtensionAPI): void {
+	if (process.env.PI_EXPLORE_SUBAGENT === "1") return;
 	const envCache = createEnvCache();
 	const formatter = createProjectFormatter();
 	const freshness = createFileFreshnessTracker();

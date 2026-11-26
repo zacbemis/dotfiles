@@ -10,6 +10,7 @@ import { parseMachines } from "./transport.ts";
 import { isFinal } from "./mailbox.mjs";
 
 export default async function (pi: ExtensionAPI) {
+	if (process.env.PI_EXPLORE_SUBAGENT === "1") return;
 	let routes: unknown = {};
 	try {
 		routes = JSON.parse(await readFile(join(getAgentDir(), "remote-thread.json"), "utf8"));

@@ -4,15 +4,16 @@ import { resolve } from "node:path";
 
 export const EXPLORE_TOOL_NAME = "explore";
 export const EXPLORE_ENV_FLAG = "PI_EXPLORE_SUBAGENT";
-export const EXPLORE_TIMEOUT_MS = 120_000;
+export const EXPLORE_TIMEOUT_MS = 150_000;
 export const MAX_EXPLORE_OUTPUT_CHARS = 16_000;
 
 const KILL_GRACE_MS = 3_000;
 
 const EXPLORE_SYSTEM_PROMPT = `You are a fast, read-only codebase exploration subagent.
-Answer the caller's question accurately using only read, grep, find, and ls.
+Answer the caller's question accurately using only read, grep, find, and ls (or read-only inspection).
 - Prefer parallelizing independent find, grep, and read calls.
-- Run targeted searches first; read only the relevant slices of files.
+- Run targeted searches first; read only the relevant slices of files rather than reading every file end-to-end.
+- Aim to finish within 2-5 parallel read/search turns and return a concise, well-structured summary.
 - Report exact file paths, symbol names, line numbers, and concise findings.
 - Do not speculate about files you did not inspect, and do not suggest edits unless asked.`;
 
@@ -76,6 +77,26 @@ export function selectExploreModel(
 		if (haiku) return haiku;
 	}
 
+	if (current.provider === "antigravity-acp") {
+		// Avoid booting a nested agy_acp_server when a fast builtin explorer is available.
+		const builtinFast =
+			findModel("openai-codex", (id) => id === "gpt-6-luna") ??
+			findModel("openai-codex", (id) => id === "gpt-6.2-astra") ??
+			findModel("openai-codex", (id) => id.includes("gpt-6") && id.includes("luna"));
+		if (builtinFast) return builtinFast;
+	}
+
+	if (currentId.includes("gemini") && !currentId.includes("flash")) {
+		const flash =
+			findModel(current.provider, (id) => id === "gemini-3.8-flash") ??
+			findModel(current.provider, (id) => id.includes("flash"));
+		if (flash) return flash;
+		if (!currentId.includes("hydrogen")) {
+			const hydrogen = findModel(current.provider, (id) => id.includes("hydrogen"));
+			if (hydrogen) return hydrogen;
+		}
+	}
+
 	return current;
 }
 
@@ -126,6 +147,16 @@ export function parseExploreJsonLine(line: string): ParsedExploreEvent | undefin
 
 	if (parsed.type === "tool_execution_start" && typeof parsed.toolName === "string") {
 		return { toolCallName: parsed.toolName };
+	}
+
+	if (parsed.type === "message_update" && parsed.assistantMessageEvent && typeof parsed.assistantMessageEvent === "object") {
+		const ev = parsed.assistantMessageEvent as Record<string, unknown>;
+		if (ev.type === "thinking_delta" && typeof ev.delta === "string") {
+			const match = /\[Antigravity tool:\s*(?:Running\s+)?([^\s—\]]+)/.exec(ev.delta);
+			if (match?.[1]) {
+				return { toolCallName: match[1] };
+			}
+		}
 	}
 
 	if (parsed.type === "message_end" && parsed.message && typeof parsed.message === "object") {

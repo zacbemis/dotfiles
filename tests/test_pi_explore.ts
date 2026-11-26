@@ -11,6 +11,9 @@ test("explore model routing, CLI flags, and JSONL parsing behave deterministical
 		{ provider: "openai-codex", id: "gpt-5.4-mini" },
 		{ provider: "claude-bridge", id: "claude-opus-5-5" },
 		{ provider: "claude-bridge", id: "claude-sonnet-5-5" },
+		{ provider: "antigravity-acp", id: "gemini-4-neon" },
+		{ provider: "antigravity-acp", id: "gemini-4-hydrogen" },
+		{ provider: "antigravity-acp", id: "gemini-3.8-flash" },
 	];
 
 	const codexChoice = selectExploreModel({ provider: "openai-codex", id: "gpt-6.2-sol" }, available);
@@ -35,9 +38,49 @@ test("explore model routing, CLI flags, and JSONL parsing behave deterministical
 	const bridgeArgs = buildExploreArgs("Trace router", bridgeChoice);
 	assert.equal(bridgeArgs.includes("--no-extensions"), false);
 
+	const neonChoice = selectExploreModel({ provider: "antigravity-acp", id: "gemini-4-neon" }, available);
+	assert.deepEqual(neonChoice, { provider: "openai-codex", id: "gpt-6-luna" });
+	assert.ok(buildExploreArgs("Survey repo", neonChoice).includes("--no-extensions"));
+
+	const neonNoBuiltin = selectExploreModel(
+		{ provider: "antigravity-acp", id: "gemini-4-neon" },
+		[
+			{ provider: "antigravity-acp", id: "gemini-4-neon" },
+			{ provider: "antigravity-acp", id: "gemini-3.8-flash" },
+		],
+	);
+	assert.deepEqual(neonNoBuiltin, { provider: "antigravity-acp", id: "gemini-3.8-flash" });
+
+	const neonFallback = selectExploreModel(
+		{ provider: "antigravity-acp", id: "gemini-4-neon" },
+		[
+			{ provider: "antigravity-acp", id: "gemini-4-neon" },
+			{ provider: "antigravity-acp", id: "gemini-4-hydrogen" },
+		],
+	);
+	assert.deepEqual(neonFallback, { provider: "antigravity-acp", id: "gemini-4-hydrogen" });
+
+	const flashChoice = selectExploreModel(
+		{ provider: "google", id: "gemini-3.8-flash" },
+		[{ provider: "google", id: "gemini-3.8-flash" }],
+	);
+	assert.deepEqual(flashChoice, { provider: "google", id: "gemini-3.8-flash" });
+
 	assert.deepEqual(parseExploreJsonLine('{"type":"tool_execution_start","toolName":"grep"}'), {
 		toolCallName: "grep",
 	});
+	assert.deepEqual(
+		parseExploreJsonLine(
+			JSON.stringify({
+				type: "message_update",
+				assistantMessageEvent: {
+					type: "thinking_delta",
+					delta: "\n[Antigravity tool: Running view_file — in_progress]\n",
+				},
+			}),
+		),
+		{ toolCallName: "view_file" },
+	);
 	assert.deepEqual(
 		parseExploreJsonLine(
 			JSON.stringify({

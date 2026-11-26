@@ -71,6 +71,7 @@ function extractEditedPaths(
 }
 
 export default function (pi: ExtensionAPI): void {
+	if (process.env.PI_EXPLORE_SUBAGENT === "1") return;
 	const manager = createLspDiagnosticsManager();
 	const settleGuard = createLspSettleGuard();
 	let disabledByWorkspaceGate = false;

@@ -2,7 +2,7 @@ import { access } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import type { ModelLike } from "./apply-patch.ts";
 
-export type ModelFamily = "gpt" | "claude" | "other";
+export type ModelFamily = "gpt" | "claude" | "gemini" | "other";
 
 export interface EnvSnapshot {
 	readonly dateString: string;
@@ -18,6 +18,7 @@ export function classifyModelFamily(model: ModelLike | undefined): ModelFamily {
 	if (!id) return "other";
 	if (id.includes("gpt-") && !id.includes("gpt-4") && !id.includes("oss")) return "gpt";
 	if (id.includes("claude")) return "claude";
+	if (id.includes("gemini")) return "gemini";
 	return "other";
 }
 
@@ -36,6 +37,18 @@ export function buildPromptGuidelines(options: {
 	if (options.activeTools.includes("bash")) {
 		rules.push(
 			"Do not chain shell commands with visual separator echoes like echo '====' or printf '---'; run separate commands or print only needed values.",
+		);
+	}
+
+	if (options.activeTools.includes("remote_thread") && options.activeTools.includes("explore")) {
+		rules.push(
+			"When orchestrating work via remote_thread (implementor/reviewer), keep the main thread lean: check plan/git status briefly and delegate broad repo inspection to explore rather than reading dozens of source files directly.",
+		);
+	}
+
+	if (options.model?.provider === "antigravity-acp" && options.activeTools.includes("explore")) {
+		rules.push(
+			"Never chain more than ~5 view_file calls in the main thread to understand a project or gather context; call Pi's explore tool (pi_explore via pi-bridge, or parallel explore calls by area) instead of bulk view_file calls.",
 		);
 	}
 

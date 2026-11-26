@@ -20,11 +20,11 @@ export default function (pi: ExtensionAPI): void {
 		name: EXPLORE_TOOL_NAME,
 		label: "explore",
 		description:
-			"Run an isolated read-only subagent for broad, unfamiliar, multi-directory codebase research (20+ files) without filling main context. Do not use for small repos, known paths, or targeted bug fixes; use find/grep/read/lsp directly instead.",
+			"Run an isolated read-only subagent to understand a project, survey multiple directories/files (6+ files), or gather broad context without filling main context. Prefer parallel explore calls by area for whole-project onboarding; use read/grep/find/lsp directly for narrow lookups or 1-5 specific files.",
 		promptSnippet:
-			"Run a read-only subagent for broad, unfamiliar multi-directory research (20+ files) without filling main context",
+			"Run an isolated read-only subagent for project understanding, multi-file surveys (6+ files), or codebase discovery without filling main context",
 		promptGuidelines: [
-			"Use explore only for broad, unfamiliar, multi-directory research (20+ files); use find/grep/read (or lsp) directly for small repos, known paths, or targeted fixes.",
+			"Use explore (or parallel explore calls by area) whenever you need to understand a project, survey multiple directories, or inspect more than ~5 files—never chain many sequential read/view_file calls in the main thread. Use read/grep/find/lsp directly for targeted lookups or 1-5 specific files.",
 		],
 		parameters: exploreSchema,
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
